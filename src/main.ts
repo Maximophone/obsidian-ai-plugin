@@ -77,12 +77,24 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
-    // Insert system tag
+    // Insert system tag (manual - for inline system prompts)
     this.addCommand({
       id: 'insert-system',
-      name: 'Insert system prompt tag',
+      name: 'Insert system prompt tag (manual)',
       editorCallback: (editor) => {
         this.insertAtCursor(editor, '<system!>', 8);
+      },
+    });
+    
+    // Insert prompt tag with selector (loads from prompts folder)
+    this.addCommand({
+      id: 'insert-prompt',
+      name: 'Insert prompt tag',
+      editorCallback: (editor) => {
+        const promptsFolder = this.settings.promptsFolder;
+        new PromptSuggestModal(this.app, promptsFolder, (file) => {
+          this.insertAtCursor(editor, `<prompt!"${file.basename}">`);
+        }).open();
       },
     });
     
@@ -451,6 +463,37 @@ class NoteSuggestModal extends FuzzySuggestModal<TFile> {
   
   getItemText(file: TFile): string {
     return file.path;
+  }
+  
+  onChooseItem(file: TFile): void {
+    this.onSelect(file);
+  }
+}
+
+/**
+ * Prompt selector modal - shows prompts from the configured prompts folder
+ */
+class PromptSuggestModal extends FuzzySuggestModal<TFile> {
+  private prompts: TFile[];
+  private onSelect: (file: TFile) => void;
+  
+  constructor(app: App, promptsFolder: string, onSelect: (file: TFile) => void) {
+    super(app);
+    // Get only markdown files from the prompts folder
+    this.prompts = app.vault.getMarkdownFiles().filter(file => 
+      file.path.startsWith(promptsFolder + '/') || file.path.startsWith(promptsFolder + '\\')
+    );
+    this.onSelect = onSelect;
+    this.setPlaceholder('Search for a prompt...');
+  }
+  
+  getItems(): TFile[] {
+    return this.prompts;
+  }
+  
+  getItemText(file: TFile): string {
+    // Show just the filename without extension for cleaner display
+    return file.basename;
   }
   
   onChooseItem(file: TFile): void {

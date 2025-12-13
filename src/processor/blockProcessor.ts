@@ -39,6 +39,10 @@ interface LoadedUrls {
   [url: string]: { content: string; title?: string } | { error: string };
 }
 
+interface LoadedPrompts {
+  [name: string]: { content: string } | { error: string };
+}
+
 // Supported image extensions and their MIME types
 const IMAGE_MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -379,6 +383,47 @@ export class BlockProcessor {
   }
   
   /**
+   * Pre-load all prompts referenced by <prompt!> tags
+   */
+  private async preloadPrompts(text: string): Promise<LoadedPrompts> {
+    const prompts: LoadedPrompts = {};
+    const tags = extractTags(text);
+    
+    for (const tag of tags) {
+      if (tag.name === 'prompt' && tag.value) {
+        const promptName = tag.value;
+        if (prompts[promptName]) continue; // Already loaded
+        
+        try {
+          // Try to find the prompt file in the prompts folder
+          const promptsFolder = this.plugin.settings.promptsFolder;
+          const promptPath = `${promptsFolder}/${promptName}.md`;
+          
+          const file = this.plugin.app.vault.getAbstractFileByPath(promptPath);
+          if (file && file instanceof TFile) {
+            const content = await this.plugin.app.vault.read(file);
+            prompts[promptName] = { content };
+          } else {
+            // Try without .md extension (maybe user included it)
+            const altPath = `${promptsFolder}/${promptName}`;
+            const altFile = this.plugin.app.vault.getAbstractFileByPath(altPath);
+            if (altFile && altFile instanceof TFile) {
+              const content = await this.plugin.app.vault.read(altFile);
+              prompts[promptName] = { content };
+            } else {
+              prompts[promptName] = { error: `Prompt not found: ${promptName} (looked in ${promptsFolder}/)` };
+            }
+          }
+        } catch (e) {
+          prompts[promptName] = { error: `Error reading prompt ${promptName}: ${e.message}` };
+        }
+      }
+    }
+    
+    return prompts;
+  }
+  
+  /**
    * Convert HTML to plain text
    */
   private htmlToText(html: string): string {
@@ -482,12 +527,13 @@ export class BlockProcessor {
     });
     
     try {
-      // Pre-load all referenced documents, files, images, PDFs, and URLs
+      // Pre-load all referenced documents, files, images, PDFs, URLs, and prompts
       const loadedDocs = await this.preloadDocuments(blockWithoutReply);
       const loadedFiles = await this.preloadFiles(blockWithoutReply);
       const loadedImages = await this.preloadImages(blockWithoutReply);
       const loadedPDFs = await this.preloadPDFs(blockWithoutReply);
       const loadedUrls = await this.preloadUrls(blockWithoutReply);
+      const loadedPrompts = await this.preloadPrompts(blockWithoutReply);
       
       // Parse the block to extract parameters and process context tags
       const [processedText, tags, images, pdfs] = this.processContextTags(
@@ -497,7 +543,8 @@ export class BlockProcessor {
         loadedFiles, 
         loadedImages,
         loadedPDFs,
-        loadedUrls
+        loadedUrls,
+        loadedPrompts
       );
       
       // Extract parameters from tags
@@ -665,7 +712,8 @@ Step 3: Finally, I select the best solution...`;
     loadedFiles: LoadedFiles = {},
     loadedImages: LoadedImages = {},
     loadedPDFs: LoadedPDFs = {},
-    loadedUrls: LoadedUrls = {}
+    loadedUrls: LoadedUrls = {},
+    loadedPrompts: LoadedPrompts = {}
   ): [string, Array<{name: string; value: string | null; text: string | null}>, Array<{base64: string; mediaType: string}>, Array<{base64: string}>] {
     const collectedTags: Array<{name: string; value: string | null; text: string | null}> = [];
     const collectedImages: Array<{base64: string; mediaType: string}> = [];
@@ -688,7 +736,7 @@ Step 3: Finally, I select the best solution...`;
       doc: (v) => this.insertDocRef(v, loadedDocs),
       file: (v) => this.insertFileRef(v, loadedFiles),
       url: (v) => this.insertUrlRef(v, loadedUrls),
-      prompt: (v) => this.insertPromptRef(v),
+      prompt: (v) => this.insertPromptRef(v, loadedPrompts),
       image: (v) => this.insertImageRef(v, loadedImages, collectedImages),
       pdf: (v) => this.insertPDFRef(v, loadedPDFs, collectedPDFs),
     };
@@ -967,11 +1015,21 @@ Step 3: Finally, I select the best solution...`;
   }
   
   /**
-   * Insert prompt reference
+   * Insert prompt reference using pre-loaded content
    */
-  private insertPromptRef(name: string | null): string {
+  private insertPromptRef(name: string | null, loadedPrompts: LoadedPrompts = {}): string {
     if (!name) return 'Error: No prompt name specified';
-    return `[[Prompt ${name} will be loaded]]`;
+    
+    // Check if we have pre-loaded content
+    const loaded = loadedPrompts[name];
+    if (loaded) {
+      if ('error' in loaded) {
+        return `<error>${loaded.error}</error>`;
+      }
+      return `<system_prompt name="${name}">\n${loaded.content}\n</system_prompt>`;
+    }
+    
+    return `<error>Prompt "${name}" was not pre-loaded</error>`;
   }
   
   /**
@@ -1074,7 +1132,8 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<MODEL!name>\` - Choose model: haiku, sonnet, opus, gpt4, gemini, etc.
 - \`<TEMPERATURE!0.7>\` - Set randomness (0.0-1.0)
 - \`<MAX_TOKENS!4000>\` - Set max response length
-- \`<SYSTEM!prompt_name>\` - Use a prompt from your vault's Prompts folder
+- \`<SYSTEM!prompt_name>\` - Set system prompt (loads from Prompts folder)
+- \`<PROMPT!prompt_name>\` - Include prompt content inline (from Prompts folder)
 - \`<THINK!>\` - Enable extended thinking (Claude, o-series, Gemini)
 - \`<THINK!16000>\` - Enable thinking with custom token budget
 - \`<DEBUG!>\` - Show debug info
