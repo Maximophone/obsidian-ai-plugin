@@ -48,3 +48,63 @@ details summary:hover {
   text-decoration: underline;
 }
 
+/* Tool Confirmation Modal */
+.tool-confirmation-title {
+  margin-bottom: 16px;
+  color: var(--text-warning);
+}
+
+.tool-confirmation-name {
+  margin-bottom: 8px;
+  font-family: var(--font-monospace);
+}
+
+.tool-confirmation-description {
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.tool-confirmation-args {
+  background-color: var(--background-secondary);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tool-confirmation-args pre {
+  margin: 0;
+}
+
+.tool-confirmation-args code {
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-confirmation-warning {
+  background-color: var(--background-modifier-error);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+  color: var(--text-on-accent);
+}
+
+.tool-confirmation-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.tool-confirmation-approve {
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.tool-confirmation-reject {
+  background-color: var(--background-modifier-error) !important;
+  color: var(--text-on-accent) !important;
+}
+

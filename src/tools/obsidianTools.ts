@@ -1,6 +1,7 @@
 /**
  * Obsidian Toolset - Tools for interacting with the vault
- * All read-only tools (safe=true) - no confirmation needed
+ * Read-only tools (safe=true) - no confirmation needed
+ * Write tools (safe=false) - require user confirmation
  */
 
 import { App, TFile, TFolder, TAbstractFile } from 'obsidian';
@@ -467,9 +468,58 @@ export function createObsidianToolset(app: App): Toolset {
     },
   });
 
+  // ============ create_note ============
+  // WRITE TOOL - requires confirmation
+  tools.push({
+    definition: {
+      name: 'create_note',
+      description: 'Create a new note in the vault. Will fail if the note already exists. Use this to create new notes with content.',
+      parameters: {
+        filepath: {
+          type: 'string',
+          description: 'Path for the new note file (relative to vault root). Should end with .md',
+          required: true,
+        },
+        content: {
+          type: 'string',
+          description: 'Content to write to the new note',
+          required: true,
+        },
+      },
+      safe: false, // Write operation - requires confirmation
+    },
+    execute: async (args) => {
+      const filepath = args.filepath as string;
+      const content = args.content as string;
+      
+      // Ensure .md extension
+      const normalizedPath = filepath.endsWith('.md') ? filepath : `${filepath}.md`;
+      
+      // Check if file already exists
+      const existingFile = app.vault.getAbstractFileByPath(normalizedPath);
+      if (existingFile) {
+        return `Error: File already exists: ${normalizedPath}. Use a different path or use an edit tool to modify existing notes.`;
+      }
+      
+      // Create parent folders if needed
+      const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+      if (folderPath) {
+        const existingFolder = app.vault.getAbstractFileByPath(folderPath);
+        if (!existingFolder) {
+          await app.vault.createFolder(folderPath);
+        }
+      }
+      
+      // Create the note
+      const newFile = await app.vault.create(normalizedPath, content);
+      
+      return `Successfully created note: ${newFile.path}\nSize: ${formatSize(newFile.stat.size)}\nLines: ${content.split('\n').length}`;
+    },
+  });
+
   return {
     name: 'obsidian',
-    description: 'Tools for interacting with your Obsidian vault - reading notes, searching, exploring structure',
+    description: 'Tools for interacting with your Obsidian vault - reading notes, searching, exploring structure, and creating new notes',
     tools,
   };
 }

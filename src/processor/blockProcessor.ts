@@ -7,6 +7,7 @@ import { TFile, Notice, Platform, requestUrl } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
 import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolCall, AIToolResult } from '../types';
 import { ToolDefinition } from '../tools';
+import { showToolConfirmation, ToolConfirmationResult } from '../ui/ToolConfirmationModal';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -108,73 +109,6 @@ export class BlockProcessor {
   private hasReplyTag(text: string): boolean {
     const [, tags] = processTags(text);
     return tags.some(t => t.name === 'reply');
-  }
-  
-  /**
-   * Check if block text contains the processing placeholder
-   */
-  private hasProcessingPlaceholder(text: string): boolean {
-    return text.includes(BEACON.PROCESSING);
-  }
-  
-  /**
-   * Replace reply tags with processing placeholder
-   * This is called first to show the user that processing has started
-   */
-  replaceReplyWithPlaceholder(content: string): { newContent: string; hasChanges: boolean } {
-    const [, tags] = processTags(content);
-    const aiBlocks = tags.filter(t => t.name === 'ai');
-    
-    let result = content;
-    let hasChanges = false;
-    
-    for (const block of aiBlocks) {
-      if (block.text && this.hasReplyTag(block.text)) {
-        // Replace <reply!> with processing placeholder in this block
-        const newBlockText = block.text.replace(/<reply!>/gi, BEACON.PROCESSING);
-        const newBlock = `<ai!${block.value || ''}>${newBlockText}</ai!>`;
-        result = result.replace(block.fullMatch, newBlock);
-        hasChanges = true;
-      }
-    }
-    
-    return { newContent: result, hasChanges };
-  }
-  
-  /**
-   * Process content that has processing placeholders
-   * This replaces the placeholders with actual AI responses
-   */
-  async processPlaceholders(content: string, filePath: string): Promise<string> {
-    // First pass: remove content from ai blocks to get doc context
-    const [docWithoutAi] = processTags(content, {
-      ai: () => '',
-    });
-    
-    const context: ProcessingContext = {
-      doc: docWithoutAi,
-      filePath,
-    };
-    
-    // Find all AI blocks that have processing placeholders
-    const [, tags] = processTags(content);
-    const aiBlocks = tags.filter(t => t.name === 'ai');
-    
-    let result = content;
-    
-    for (const block of aiBlocks) {
-      if (block.text && this.hasProcessingPlaceholder(block.text)) {
-        const processedBlock = await this.processAiBlockWithPlaceholder(block.value, block.text, context, filePath);
-        result = result.replace(block.fullMatch, processedBlock);
-      }
-    }
-    
-    // Also process help tags
-    const [finalResult] = processTags(result, {
-      help: () => this.getHelpText(),
-    });
-    
-    return finalResult;
   }
   
   /**
@@ -643,14 +577,47 @@ export class BlockProcessor {
         const requiresConfirmation = this.plugin.toolManager.toolRequiresConfirmation(toolCall.name);
         
         if (requiresConfirmation) {
-          // TODO: Show confirmation modal
-          // For now, skip unsafe tools
-          toolResults.push({
-            toolCallId: toolCall.id,
-            error: 'Unsafe tool execution not yet implemented. Please use safe (read-only) tools.',
-          });
-          log(`    Skipped: Unsafe tool requires confirmation`);
-          continue;
+          // Get tool description for the modal
+          const tool = this.plugin.toolManager.getTool(toolCall.name);
+          const toolDescription = tool?.definition.description || 'No description available';
+          
+          log(`    Showing confirmation modal for unsafe tool`);
+          
+          // Show confirmation modal and wait for user response
+          const confirmation: ToolConfirmationResult = await showToolConfirmation(
+            this.plugin.app,
+            {
+              id: toolCall.id,
+              name: toolCall.name,
+              arguments: toolCall.arguments,
+            },
+            toolDescription
+          );
+          
+          if (!confirmation.approved) {
+            // User rejected - pass feedback to AI
+            const feedbackMsg = confirmation.feedback 
+              ? `User rejected this action with feedback: "${confirmation.feedback}"`
+              : 'User rejected this action without providing feedback.';
+            
+            toolResults.push({
+              toolCallId: toolCall.id,
+              error: feedbackMsg,
+            });
+            log(`    User rejected tool execution`);
+            
+            // Record as a rejected tool execution
+            toolExecutions.push({
+              name: toolCall.name,
+              args: toolCall.arguments,
+              result: `❌ REJECTED: ${feedbackMsg}`,
+              aiMessage: response.content,
+            });
+            
+            continue;
+          }
+          
+          log(`    User approved tool execution`);
         }
         
         // Execute the tool
@@ -743,29 +710,6 @@ export class BlockProcessor {
   }
   
   /**
-   * Process a single AI block that has the processing placeholder
-   * (called after replaceReplyWithPlaceholder)
-   */
-  private async processAiBlockWithPlaceholder(
-    option: string | null,
-    blockText: string,
-    context: ProcessingContext,
-    filePath: string
-  ): Promise<string> {
-    const optionTxt = option || '';
-    
-    // Check if block has processing placeholder
-    if (!this.hasProcessingPlaceholder(blockText)) {
-      return `<ai!${optionTxt}>${blockText}</ai!>`;
-    }
-    
-    // Remove the processing placeholder from the block
-    const blockWithoutPlaceholder = blockText.replace(BEACON.PROCESSING, '');
-    
-    return this.executeAiBlock(optionTxt, blockWithoutPlaceholder, context, filePath);
-  }
-  
-  /**
    * Process a single AI block
    */
   private async processAiBlock(
@@ -785,19 +729,6 @@ export class BlockProcessor {
     const [blockWithoutReply] = processTags(blockText, {
       reply: () => '',
     });
-    
-    return this.executeAiBlock(optionTxt, blockWithoutReply, context, filePath);
-  }
-  
-  /**
-   * Execute AI processing on a block (shared logic for both paths)
-   */
-  private async executeAiBlock(
-    optionTxt: string,
-    blockWithoutReply: string,
-    context: ProcessingContext,
-    filePath: string
-  ): Promise<string> {
     
     try {
       // Pre-load all referenced documents, files, images, PDFs, URLs, and prompts
