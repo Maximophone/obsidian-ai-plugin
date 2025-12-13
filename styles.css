@@ -1,0 +1,50 @@
+/* Obsidian AI Plugin Styles */
+
+/* Models table in settings */
+.obsidian-ai-models-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 0.9em;
+}
+
+.obsidian-ai-models-table th,
+.obsidian-ai-models-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.obsidian-ai-models-table th {
+  background-color: var(--background-secondary);
+  font-weight: 600;
+}
+
+.obsidian-ai-models-table tr:hover {
+  background-color: var(--background-secondary-alt);
+}
+
+/* Custom model settings row */
+.obsidian-ai-custom-model .setting-item-control {
+  gap: 8px;
+}
+
+.obsidian-ai-custom-model input[type="text"] {
+  width: 120px;
+}
+
+.obsidian-ai-custom-model select {
+  width: 100px;
+}
+
+/* Details/summary for collapsible sections */
+details summary {
+  cursor: pointer;
+  color: var(--text-accent);
+  margin-bottom: 10px;
+}
+
+details summary:hover {
+  text-decoration: underline;
+}
+
