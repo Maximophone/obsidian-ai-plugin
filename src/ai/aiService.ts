@@ -690,9 +690,14 @@ export class AIService {
         ...requestParams,
         url: `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=${apiKey}`,
       });
-    } catch (e) {
+    } catch (e: any) {
+      // Try to extract response body from error if available
+      const errorBody = e.response?.text || e.text || '';
       log(`\n**Request failed:** ${e.message || String(e)}`);
-      const error = new Error(`Google AI API error: ${e.message || String(e)}`);
+      if (errorBody) {
+        log(`**Error response body:**\n\`\`\`\n${errorBody}\n\`\`\``);
+      }
+      const error = new Error(`Google AI API error: ${e.message || String(e)}${errorBody ? '\n' + errorBody : ''}`);
       (error as any).debugLog = debugLog;
       throw error;
     }

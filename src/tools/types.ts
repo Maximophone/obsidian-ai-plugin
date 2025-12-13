@@ -102,10 +102,12 @@ export function toolsToOpenAIFormat(tools: ToolDefinition[]): unknown[] {
 
 export function toolsToGoogleFormat(tools: ToolDefinition[]): unknown[] {
   return [{
-    functionDeclarations: tools.map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: {
+    functionDeclarations: tools.map(tool => {
+      const requiredParams = Object.entries(tool.parameters)
+        .filter(([_, param]) => param.required)
+        .map(([name, _]) => name);
+      
+      const params: Record<string, unknown> = {
         type: 'OBJECT',
         properties: Object.fromEntries(
           Object.entries(tool.parameters).map(([name, param]) => [
@@ -117,11 +119,19 @@ export function toolsToGoogleFormat(tools: ToolDefinition[]): unknown[] {
             }
           ])
         ),
-        required: Object.entries(tool.parameters)
-          .filter(([_, param]) => param.required)
-          .map(([name, _]) => name),
-      },
-    })),
+      };
+      
+      // Only include required if there are required params (Gemini doesn't like empty arrays)
+      if (requiredParams.length > 0) {
+        params.required = requiredParams;
+      }
+      
+      return {
+        name: tool.name,
+        description: tool.description,
+        parameters: params,
+      };
+    }),
   }];
 }
 
