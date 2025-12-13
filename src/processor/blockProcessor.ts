@@ -810,6 +810,7 @@ Step 3: Finally, I select the best solution...`;
     debug?: boolean;
     thinking?: ThinkingConfig;
     mock?: boolean;
+    toolsets?: string[];
   } {
     const params: Record<string, unknown> = {};
     
@@ -845,6 +846,13 @@ Step 3: Finally, I select the best solution...`;
           // <mock!> - echo back what would be sent to the AI
           params.mock = true;
           break;
+        case 'tools':
+          // <tools!obsidian> or <tools!obsidian,system>
+          if (tag.value) {
+            const toolsetNames = tag.value.split(',').map(s => s.trim());
+            params.toolsets = toolsetNames;
+          }
+          break;
       }
     }
     
@@ -855,6 +863,8 @@ Step 3: Finally, I select the best solution...`;
       maxTokens?: number;
       debug?: boolean;
       thinking?: ThinkingConfig;
+      mock?: boolean;
+      toolsets?: string[];
     };
   }
   
