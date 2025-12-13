@@ -96,17 +96,50 @@ GET /health
 | `fetch_webpage` | ✅ | Fetch URL and convert to markdown |
 | `persistent_shell` | ❌ | Persistent shell session |
 
-### Gmail Toolset (`gmail`) - Coming Soon
+### Gmail Toolset (`gmail`)
+
+Requires OAuth credentials. See [Gmail Setup](#gmail-setup) below.
 
 | Tool | Safe | Description |
 |------|------|-------------|
 | `send_email` | ❌ | Send an email |
 | `reply_to_email` | ❌ | Reply to an email in thread |
-| `search_emails` | ✅ | Search emails |
+| `search_emails` | ✅ | Search emails with filters |
 | `get_email_content` | ✅ | Get full email content |
 | `list_recent_emails` | ✅ | List recent emails |
 | `list_email_attachments` | ✅ | List email attachments |
 | `download_email_attachments` | ❌ | Download attachments |
+
+#### Gmail Setup
+
+1. **Create Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project (or select existing)
+
+2. **Enable Gmail API**
+   - Go to APIs & Services → Library
+   - Search for "Gmail API" and enable it
+
+3. **Create OAuth Credentials**
+   - Go to APIs & Services → Credentials
+   - Click "Create Credentials" → "OAuth client ID"
+   - Select "Desktop app" as application type
+   - Download the JSON file
+
+4. **Configure MCP Server**
+   ```bash
+   # Save credentials in mcp_server directory
+   mv ~/Downloads/client_secret_xxx.json mcp_server/credentials.json
+   
+   # Enable gmail toolset in .env
+   MCP_ENABLED_TOOLSETS=system,gmail
+   ```
+
+5. **First Run - OAuth Flow**
+   - Start the server and call any Gmail tool
+   - A browser window will open for Google sign-in
+   - Grant permissions to your app
+   - `token.pickle` will be saved for future use
 
 ### Discord Toolset (`discord`) - Coming Soon
 
@@ -171,13 +204,17 @@ mcp_server/
 ├── requirements.txt    # Python dependencies
 ├── .env.example        # Environment template
 ├── .env                # Your local config (gitignored)
+├── credentials.json    # Gmail OAuth credentials (gitignored)
+├── token.pickle        # Gmail OAuth token (gitignored)
 ├── toolsets/
 │   ├── __init__.py     # Toolset registry
 │   ├── base.py         # @tool decorator
 │   ├── system.py       # Filesystem/shell tools
-│   ├── gmail.py        # Gmail tools (Phase 2)
-│   └── discord.py      # Discord tools (Phase 3)
-└── credentials.json    # Gmail OAuth (Phase 2)
+│   ├── gmail.py        # Gmail tools
+│   └── discord.py      # Discord tools (coming soon)
+└── integrations/
+    ├── __init__.py
+    └── gmail_client.py # Gmail API client
 ```
 
 ## Integration with Obsidian AI Plugin

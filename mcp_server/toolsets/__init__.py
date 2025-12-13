@@ -5,13 +5,14 @@ This module provides the toolset registry and imports all available toolsets.
 """
 
 from typing import Dict, List, TYPE_CHECKING
+import logging
+
 from .base import ToolDefinition, get_all_tools
 
 if TYPE_CHECKING:
     from .base import RegisteredTool
 
-# Import toolsets to register their tools
-from . import system
+logger = logging.getLogger(__name__)
 
 # Will be populated by toolset imports
 _toolsets: Dict[str, List["RegisteredTool"]] = {}
@@ -20,6 +21,7 @@ _toolsets: Dict[str, List["RegisteredTool"]] = {}
 def register_toolset(name: str, tools: List["RegisteredTool"]) -> None:
     """Register a toolset with its tools."""
     _toolsets[name] = tools
+    logger.debug(f"Registered toolset '{name}' with {len(tools)} tools")
 
 
 def get_toolset(name: str) -> List["RegisteredTool"]:
@@ -40,6 +42,16 @@ def get_all_toolset_names() -> List[str]:
     return list(_toolsets.keys())
 
 
-# Register toolsets
+# ============ Register Toolsets ============
+
+# System toolset (always available)
+from . import system
 register_toolset("system", system.TOOLS)
+
+# Gmail toolset (requires credentials)
+try:
+    from . import gmail
+    register_toolset("gmail", gmail.TOOLS)
+except ImportError as e:
+    logger.warning(f"Gmail toolset not available: {e}")
 
