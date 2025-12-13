@@ -523,28 +523,63 @@ export class BlockProcessor {
       // Build conversation from block text, including images and PDFs
       const messages = this.parseConversation(processedText, images, pdfs);
       
-      // Check for mock mode
+      // Check for mock mode - echoes back what would be sent to the AI
       if (params.mock) {
-        new Notice('Mock mode: Skipping AI call', 2000);
+        new Notice('Mock mode: Echoing request (no API call)', 2000);
         
-        const mockResponse = {
-          content: params.mock,
-          inputTokens: 0,
-          outputTokens: 0,
-        };
+        // Build mock response that shows what would be sent
+        let mockContent = '---PARAMETERS START---\n';
+        mockContent += `model: ${modelAlias}\n`;
+        mockContent += `max_tokens: ${params.maxTokens || this.plugin.settings.defaultMaxTokens}\n`;
+        mockContent += `temperature: ${params.temperature ?? this.plugin.settings.defaultTemperature}\n`;
+        if (params.thinking) {
+          mockContent += `thinking: enabled\n`;
+          mockContent += `thinking_budget_tokens: ${params.thinking.budgetTokens || 'auto'}\n`;
+        }
+        mockContent += '---PARAMETERS END---\n\n';
         
-        // Build mock response block
-        const escapedResponse = escapeTags(mockResponse.content, [
-          'ai', 'reply', 'model', 'system', 'doc', 'this', 'url', 'pdf', 'file', 
-          'prompt', 'tools', 'think', 'debug', 'temperature', 'max_tokens', 'image', 'mock'
-        ]);
+        mockContent += '---SYSTEM PROMPT START---\n';
+        mockContent += (systemPrompt || '(none)') + '\n';
+        mockContent += '---SYSTEM PROMPT END---\n\n';
+        
+        mockContent += '---MESSAGES START---\n';
+        for (const msg of messages) {
+          mockContent += `role: ${msg.role}\n`;
+          mockContent += 'content:\n';
+          if (typeof msg.content === 'string') {
+            mockContent += msg.content + '\n';
+          } else {
+            for (const part of msg.content) {
+              if (part.type === 'text') {
+                mockContent += part.text + '\n';
+              } else if (part.type === 'image') {
+                mockContent += `[image: ${part.mediaType}, ${Math.round(part.base64Data.length / 1024)}KB base64]\n`;
+              } else if (part.type === 'pdf') {
+                mockContent += `[pdf: ${Math.round(part.base64Data.length / 1024)}KB base64]\n`;
+              }
+            }
+          }
+          mockContent += '\n';
+        }
+        mockContent += '---MESSAGES END---\n';
+        
+        // Add mock thinking if enabled
+        let thinkingBlock = '';
+        if (params.thinking) {
+          const mockThinking = `Mock reasoning: This is a simulated chain of thought from the mock wrapper.
+I would have used up to ${params.thinking.budgetTokens || 'auto'} tokens for this reasoning.
+Step 1: First, I analyze the problem...
+Step 2: Then, I consider possible approaches...
+Step 3: Finally, I select the best solution...`;
+          thinkingBlock = `${BEACON.THOUGHT}\n${mockThinking}\n${BEACON.END_THOUGHT}\n`;
+        }
         
         let tokenInfo = '';
         if (this.plugin.settings.showTokenCount) {
           tokenInfo = `${BEACON.TOKENS_PREFIX}In=0,Out=0 (MOCK)|==\n`;
         }
         
-        const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}**[MOCK RESPONSE]**\n${escapedResponse}\n${BEACON.ME}\n`;
+        const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${mockContent}\n${BEACON.ME}\n`;
         
         if (this.plugin.settings.playNotificationSound) {
           this.playNotificationSound();
@@ -726,7 +761,7 @@ export class BlockProcessor {
     maxTokens?: number;
     debug?: boolean;
     thinking?: ThinkingConfig;
-    mock?: string;
+    mock?: boolean;
   } {
     const params: Record<string, unknown> = {};
     
@@ -759,8 +794,8 @@ export class BlockProcessor {
           params.thinking = thinkingConfig;
           break;
         case 'mock':
-          // <mock!> for default response or <mock!custom response> for custom
-          params.mock = tag.value || 'This is a mock response for testing purposes.';
+          // <mock!> - echo back what would be sent to the AI
+          params.mock = true;
           break;
       }
     }
@@ -1043,8 +1078,7 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<THINK!>\` - Enable extended thinking (Claude, o-series, Gemini)
 - \`<THINK!16000>\` - Enable thinking with custom token budget
 - \`<DEBUG!>\` - Show debug info
-- \`<MOCK!>\` - Return mock response (no API call)
-- \`<MOCK!custom text>\` - Return custom mock response
+- \`<MOCK!>\` - Echo what would be sent to AI (no API call, for debugging)
 
 ## Thinking Mode
 
