@@ -5,7 +5,7 @@
 
 import { TFile, Notice, Platform } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
-import { AIMessage, BEACON, ProcessingContext } from '../types';
+import { AIMessage, BEACON, ProcessingContext, MessageContent } from '../types';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -26,6 +26,19 @@ interface LoadedDocuments {
 interface LoadedFiles {
   [path: string]: { content: string; filename: string } | { error: string };
 }
+
+interface LoadedImages {
+  [path: string]: { base64: string; mediaType: string; filename: string } | { error: string };
+}
+
+// Supported image extensions and their MIME types
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
 
 export class BlockProcessor {
   private plugin: ObsidianAIPlugin;
@@ -156,6 +169,81 @@ export class BlockProcessor {
   }
   
   /**
+   * Pre-load all images referenced by <image!> tags
+   */
+  private async preloadImages(text: string): Promise<LoadedImages> {
+    const images: LoadedImages = {};
+    const tags = extractTags(text);
+    
+    for (const tag of tags) {
+      if (tag.name === 'image' && tag.value) {
+        const imagePath = tag.value;
+        if (images[imagePath]) continue; // Already loaded
+        
+        try {
+          // Get file extension and MIME type
+          const ext = path.extname(imagePath).toLowerCase();
+          const mediaType = IMAGE_MIME_TYPES[ext];
+          
+          if (!mediaType) {
+            images[imagePath] = { error: `Unsupported image format: ${ext}. Supported: png, jpg, jpeg, gif, webp` };
+            continue;
+          }
+          
+          let imageBuffer: Buffer;
+          let filename: string;
+          
+          const isAbsolute = path.isAbsolute(imagePath);
+          
+          if (isAbsolute) {
+            // Absolute path - use Node.js fs
+            if (!fs) {
+              images[imagePath] = { error: 'Reading images outside vault requires desktop Obsidian' };
+              continue;
+            }
+            
+            if (!fs.existsSync(imagePath)) {
+              images[imagePath] = { error: `Image not found: ${imagePath}` };
+              continue;
+            }
+            
+            imageBuffer = fs.readFileSync(imagePath);
+            filename = path.basename(imagePath);
+          } else {
+            // Relative path - try vault first
+            const vaultPath = (this.plugin.app.vault.adapter as any).basePath;
+            const fullPath = path.join(vaultPath, imagePath);
+            
+            // Check if file exists in vault
+            const abstractFile = this.plugin.app.vault.getAbstractFileByPath(imagePath);
+            if (abstractFile && abstractFile instanceof TFile) {
+              // Read as binary using adapter
+              const arrayBuffer = await this.plugin.app.vault.readBinary(abstractFile);
+              imageBuffer = Buffer.from(arrayBuffer);
+              filename = abstractFile.name;
+            } else if (fs && fs.existsSync(fullPath)) {
+              imageBuffer = fs.readFileSync(fullPath);
+              filename = path.basename(imagePath);
+            } else {
+              images[imagePath] = { error: `Image not found: ${imagePath}` };
+              continue;
+            }
+          }
+          
+          // Convert to base64
+          const base64 = imageBuffer.toString('base64');
+          images[imagePath] = { base64, mediaType, filename };
+          
+        } catch (e) {
+          images[imagePath] = { error: `Error reading image ${imagePath}: ${e.message}` };
+        }
+      }
+    }
+    
+    return images;
+  }
+  
+  /**
    * Pre-load all documents referenced by <doc!> tags
    */
   private async preloadDocuments(text: string): Promise<LoadedDocuments> {
@@ -220,12 +308,13 @@ export class BlockProcessor {
     });
     
     try {
-      // Pre-load all referenced documents and files
+      // Pre-load all referenced documents, files, and images
       const loadedDocs = await this.preloadDocuments(blockWithoutReply);
       const loadedFiles = await this.preloadFiles(blockWithoutReply);
+      const loadedImages = await this.preloadImages(blockWithoutReply);
       
       // Parse the block to extract parameters and process context tags
-      const [processedText, tags] = this.processContextTags(blockWithoutReply.trim(), context.doc, loadedDocs, loadedFiles);
+      const [processedText, tags, images] = this.processContextTags(blockWithoutReply.trim(), context.doc, loadedDocs, loadedFiles, loadedImages);
       
       // Extract parameters from tags
       const params = this.extractParams(tags);
@@ -239,8 +328,8 @@ export class BlockProcessor {
         systemPrompt = await this.loadSystemPrompt(params.system);
       }
       
-      // Build conversation from block text
-      const messages = this.parseConversation(processedText);
+      // Build conversation from block text, including images
+      const messages = this.parseConversation(processedText, images);
       
       // Show processing notice
       new Notice('Processing AI request...', 2000);
@@ -283,15 +372,18 @@ export class BlockProcessor {
   }
   
   /**
-   * Process context tags (this!, doc!, url!, etc.)
+   * Process context tags (this!, doc!, url!, image!, etc.)
+   * Returns [processed text, collected tags, collected images]
    */
   private processContextTags(
     text: string, 
     docContent: string, 
     loadedDocs: LoadedDocuments = {},
-    loadedFiles: LoadedFiles = {}
-  ): [string, Array<{name: string; value: string | null; text: string | null}>] {
+    loadedFiles: LoadedFiles = {},
+    loadedImages: LoadedImages = {}
+  ): [string, Array<{name: string; value: string | null; text: string | null}>, Array<{base64: string; mediaType: string}>] {
     const collectedTags: Array<{name: string; value: string | null; text: string | null}> = [];
+    const collectedImages: Array<{base64: string; mediaType: string}> = [];
     
     const replacements: Replacements = {
       // Remove parameter tags (we'll extract them separately)
@@ -311,6 +403,7 @@ export class BlockProcessor {
       file: (v) => this.insertFileRef(v, loadedFiles),
       url: (v) => this.insertUrlRef(v),
       prompt: (v) => this.insertPromptRef(v),
+      image: (v) => this.insertImageRef(v, loadedImages, collectedImages),
     };
     
     const [processed, parsedTags] = processTags(text, replacements);
@@ -322,7 +415,30 @@ export class BlockProcessor {
       }
     }
     
-    return [processed, collectedTags];
+    return [processed, collectedTags, collectedImages];
+  }
+  
+  /**
+   * Insert image reference and collect image data
+   */
+  private insertImageRef(
+    imagePath: string | null, 
+    loadedImages: LoadedImages,
+    collectedImages: Array<{base64: string; mediaType: string}>
+  ): string {
+    if (!imagePath) return 'Error: No image path specified';
+    
+    const loaded = loadedImages[imagePath];
+    if (loaded) {
+      if ('error' in loaded) {
+        return `Error: ${loaded.error}`;
+      }
+      // Add to collected images for later use in API call
+      collectedImages.push({ base64: loaded.base64, mediaType: loaded.mediaType });
+      return `[Image: ${loaded.filename}]\n`;
+    }
+    
+    return `Error: Image ${imagePath} was not pre-loaded`;
   }
   
   /**
@@ -361,9 +477,12 @@ export class BlockProcessor {
   }
   
   /**
-   * Parse conversation text into messages
+   * Parse conversation text into messages, optionally including images
    */
-  private parseConversation(text: string): AIMessage[] {
+  private parseConversation(
+    text: string, 
+    images: Array<{base64: string; mediaType: string}> = []
+  ): AIMessage[] {
     const messages: AIMessage[] = [];
     
     // Split by AI and ME beacons
@@ -371,12 +490,29 @@ export class BlockProcessor {
     
     let currentRole: 'user' | 'assistant' = 'user';
     let currentContent = '';
+    let isFirstUserMessage = true;
     
     for (const part of parts) {
       if (part === BEACON.AI) {
         // Save current content and switch to assistant
         if (currentContent.trim()) {
-          messages.push({ role: currentRole, content: currentContent.trim() });
+          // Add images to the first user message
+          if (currentRole === 'user' && isFirstUserMessage && images.length > 0) {
+            const content: MessageContent[] = [
+              { type: 'text', text: currentContent.trim() }
+            ];
+            for (const img of images) {
+              content.push({
+                type: 'image',
+                mediaType: img.mediaType,
+                base64Data: img.base64,
+              });
+            }
+            messages.push({ role: currentRole, content });
+            isFirstUserMessage = false;
+          } else {
+            messages.push({ role: currentRole, content: currentContent.trim() });
+          }
         }
         currentRole = 'assistant';
         currentContent = '';
@@ -394,12 +530,41 @@ export class BlockProcessor {
     
     // Add final content
     if (currentContent.trim()) {
-      messages.push({ role: currentRole, content: currentContent.trim() });
+      // Add images to the first user message if not added yet
+      if (currentRole === 'user' && isFirstUserMessage && images.length > 0) {
+        const content: MessageContent[] = [
+          { type: 'text', text: currentContent.trim() }
+        ];
+        for (const img of images) {
+          content.push({
+            type: 'image',
+            mediaType: img.mediaType,
+            base64Data: img.base64,
+          });
+        }
+        messages.push({ role: currentRole, content });
+      } else {
+        messages.push({ role: currentRole, content: currentContent.trim() });
+      }
     }
     
     // Ensure we have at least one user message
     if (messages.length === 0) {
-      messages.push({ role: 'user', content: text.trim() });
+      if (images.length > 0) {
+        const content: MessageContent[] = [
+          { type: 'text', text: text.trim() }
+        ];
+        for (const img of images) {
+          content.push({
+            type: 'image',
+            mediaType: img.mediaType,
+            base64Data: img.base64,
+          });
+        }
+        messages.push({ role: 'user', content });
+      } else {
+        messages.push({ role: 'user', content: text.trim() });
+      }
     }
     
     return messages;
@@ -577,6 +742,7 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<THIS!>\` - Include the current document
 - \`<DOC!path>\` or \`<DOC![[Note Name]]>\` - Include another document
 - \`<FILE!path>\` - Include any file
+- \`<IMAGE!path>\` - Include an image (png, jpg, gif, webp) for vision models
 - \`<URL!https://...>\` - Fetch and include webpage content
 
 ## Examples

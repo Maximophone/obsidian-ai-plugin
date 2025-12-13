@@ -5,9 +5,22 @@
 // AI Provider types
 export type AIProvider = 'anthropic' | 'openai' | 'google' | 'deepseek' | 'perplexity';
 
+export interface ImageContent {
+  type: 'image';
+  mediaType: string;  // e.g., 'image/png', 'image/jpeg'
+  base64Data: string;
+}
+
+export interface TextContent {
+  type: 'text';
+  text: string;
+}
+
+export type MessageContent = TextContent | ImageContent;
+
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | MessageContent[];
 }
 
 export interface AIResponse {

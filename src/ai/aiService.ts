@@ -3,7 +3,7 @@
  */
 
 import { requestUrl, RequestUrlParam } from 'obsidian';
-import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig } from '../types';
+import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent } from '../types';
 import type ObsidianAIPlugin from '../main';
 
 export class AIService {
@@ -51,6 +51,32 @@ export class AIService {
   }
   
   /**
+   * Convert AIMessage content to Anthropic format
+   */
+  private convertToAnthropicContent(content: string | MessageContent[]): unknown {
+    if (typeof content === 'string') {
+      return content;
+    }
+    
+    // Multi-part content with images
+    return content.map(part => {
+      if (part.type === 'text') {
+        return { type: 'text', text: part.text };
+      } else if (part.type === 'image') {
+        return {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: part.mediaType,
+            data: part.base64Data,
+          },
+        };
+      }
+      return part;
+    });
+  }
+  
+  /**
    * Anthropic Claude API
    */
   private async chatAnthropic(
@@ -72,14 +98,14 @@ export class AIService {
       .filter(m => m.role !== 'system')
       .map(m => ({
         role: m.role as 'user' | 'assistant',
-        content: m.content,
+        content: this.convertToAnthropicContent(m.content),
       }));
     
     // Extract system prompt from messages if not provided
     let systemPrompt = options.systemPrompt;
     if (!systemPrompt) {
       const systemMsg = messages.find(m => m.role === 'system');
-      if (systemMsg) {
+      if (systemMsg && typeof systemMsg.content === 'string') {
         systemPrompt = systemMsg.content;
       }
     }
@@ -130,6 +156,30 @@ export class AIService {
   }
   
   /**
+   * Convert AIMessage content to OpenAI format
+   */
+  private convertToOpenAIContent(content: string | MessageContent[]): unknown {
+    if (typeof content === 'string') {
+      return content;
+    }
+    
+    // Multi-part content with images
+    return content.map(part => {
+      if (part.type === 'text') {
+        return { type: 'text', text: part.text };
+      } else if (part.type === 'image') {
+        return {
+          type: 'image_url',
+          image_url: {
+            url: `data:${part.mediaType};base64,${part.base64Data}`,
+          },
+        };
+      }
+      return part;
+    });
+  }
+  
+  /**
    * OpenAI API
    */
   private async chatOpenAI(
@@ -149,7 +199,7 @@ export class AIService {
     // Convert messages to OpenAI format
     const openaiMessages = messages.map(m => ({
       role: m.role,
-      content: m.content,
+      content: this.convertToOpenAIContent(m.content),
     }));
     
     // Add system prompt if provided
@@ -193,6 +243,30 @@ export class AIService {
   }
   
   /**
+   * Convert AIMessage content to Google Gemini format (parts array)
+   */
+  private convertToGoogleParts(content: string | MessageContent[]): unknown[] {
+    if (typeof content === 'string') {
+      return [{ text: content }];
+    }
+    
+    // Multi-part content with images
+    return content.map(part => {
+      if (part.type === 'text') {
+        return { text: part.text };
+      } else if (part.type === 'image') {
+        return {
+          inline_data: {
+            mime_type: part.mediaType,
+            data: part.base64Data,
+          },
+        };
+      }
+      return part;
+    });
+  }
+  
+  /**
    * Google Gemini API
    */
   private async chatGoogle(
@@ -223,7 +297,7 @@ export class AIService {
     for (const msg of messages) {
       if (msg.role === 'system') {
         // Handle system messages as system instruction
-        if (!systemInstruction) {
+        if (!systemInstruction && typeof msg.content === 'string') {
           systemInstruction = {
             parts: [{ text: msg.content }],
           };
@@ -233,7 +307,7 @@ export class AIService {
       
       contents.push({
         role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }],
+        parts: this.convertToGoogleParts(msg.content),
       });
     }
     
