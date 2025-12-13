@@ -552,10 +552,14 @@ export class AIService {
         };
       } else if (part.type === 'tool_result') {
         // Convert to Gemini function response format
+        // Gemini expects the response to be an object, not wrapped in "content"
         return {
           functionResponse: {
             name: part.name || 'unknown',
-            response: { content: part.content },
+            response: {
+              name: part.name || 'unknown',
+              result: part.content,
+            },
           },
         };
       }
@@ -633,8 +637,16 @@ export class AIService {
         continue;
       }
       
+      // Check if this message contains function responses
+      const hasFunctionResponse = Array.isArray(msg.content) && 
+        (msg.content as any[]).some(p => p.type === 'tool_result');
+      
+      // Determine the role
+      let role = msg.role === 'assistant' ? 'model' : 'user';
+      // Note: Gemini uses 'user' role for function responses, not 'function'
+      
       contents.push({
-        role: msg.role === 'assistant' ? 'model' : 'user',
+        role,
         parts: this.convertToGoogleParts(msg.content),
       });
     }
