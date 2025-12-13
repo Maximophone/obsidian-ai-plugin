@@ -3,7 +3,8 @@
  */
 
 import { requestUrl, RequestUrlParam } from 'obsidian';
-import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, THINKING_CAPABLE_MODELS } from '../types';
+import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, THINKING_CAPABLE_MODELS, AIToolCall } from '../types';
+import { ToolDefinition, toolsToAnthropicFormat, toolsToOpenAIFormat, toolsToGoogleFormat } from '../tools';
 import type ObsidianAIPlugin from '../main';
 
 export class AIService {
@@ -25,6 +26,7 @@ export class AIService {
       maxTokens?: number;
       thinking?: ThinkingConfig;
       debug?: boolean;
+      tools?: ToolDefinition[];
     } = {}
   ): Promise<AIResponse> {
     const modelAlias = options.model || this.plugin.settings.defaultModel;
@@ -99,6 +101,7 @@ export class AIService {
       maxTokens?: number;
       thinking?: ThinkingConfig;
       debug?: boolean;
+      tools?: ToolDefinition[];
     }
   ): Promise<AIResponse> {
     const debugLog: string[] = [];
@@ -166,6 +169,12 @@ export class AIService {
       log(`**System prompt:** (${systemPrompt.length} chars)`);
     }
     
+    // Add tools if provided
+    if (options.tools && options.tools.length > 0) {
+      body.tools = toolsToAnthropicFormat(options.tools);
+      log(`**Tools:** ${options.tools.map(t => t.name).join(', ')}`);
+    }
+    
     log(`**Temperature:** ${body.temperature}`);
     log(`**Max tokens:** ${body.max_tokens}`);
     log(`**Messages count:** ${anthropicMessages.length}`);
@@ -219,9 +228,10 @@ export class AIService {
     log(`**Input tokens:** ${data.usage?.input_tokens}`);
     log(`**Output tokens:** ${data.usage?.output_tokens}`);
     
-    // Extract text and thinking content
+    // Extract text, thinking, and tool calls from response
     let content = '';
     let thinking = '';
+    const toolCalls: AIToolCall[] = [];
     
     for (const block of data.content) {
       if (block.type === 'text') {
@@ -229,12 +239,31 @@ export class AIService {
       } else if (block.type === 'thinking') {
         thinking += block.thinking;
         log(`**Thinking block received:** ${block.thinking.length} chars`);
+      } else if (block.type === 'tool_use') {
+        toolCalls.push({
+          id: block.id,
+          name: block.name,
+          arguments: block.input,
+        });
+        log(`**Tool call:** ${block.name}(${JSON.stringify(block.input)})`);
       }
+    }
+    
+    // Determine stop reason
+    let stopReason: AIResponse['stopReason'] = 'end_turn';
+    if (data.stop_reason === 'tool_use') {
+      stopReason = 'tool_use';
+    } else if (data.stop_reason === 'max_tokens') {
+      stopReason = 'max_tokens';
+    } else if (data.stop_reason === 'stop_sequence') {
+      stopReason = 'stop_sequence';
     }
     
     return {
       content,
       thinking: thinking || undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      stopReason,
       inputTokens: data.usage?.input_tokens,
       outputTokens: data.usage?.output_tokens,
       debugLog: options.debug ? debugLog : undefined,

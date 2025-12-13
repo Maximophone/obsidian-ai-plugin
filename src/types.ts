@@ -31,11 +31,26 @@ export interface AIMessage {
   content: string | MessageContent[];
 }
 
+// Tool call from AI
+export interface AIToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+// Tool result to send back to AI
+export interface AIToolResult {
+  toolCallId: string;
+  result?: string;
+  error?: string;
+}
+
 export interface AIResponse {
   content: string;
   thinking?: string;          // Full thinking content (Claude, Gemini thinking models)
   thinkingTokens?: number;    // Thinking/reasoning token count
-  toolCalls?: ToolCall[];
+  toolCalls?: AIToolCall[];   // Tool calls requested by AI
+  stopReason?: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence';
   inputTokens?: number;
   outputTokens?: number;
   debugLog?: string[];        // Debug log entries
