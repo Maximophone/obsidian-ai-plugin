@@ -101,6 +101,19 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
+    // Insert tools tag with selector
+    this.addCommand({
+      id: 'insert-tools',
+      name: 'Insert tools tag',
+      editorCallback: (editor) => {
+        // Get available toolsets from the tool manager
+        const availableToolsets = this.toolManager.getAvailableToolsetNames();
+        new ToolsSuggestModal(this.app, availableToolsets, (toolset) => {
+          this.insertAtCursor(editor, `<tools!${toolset}>`);
+        }).open();
+      },
+    });
+    
     // Insert this tag
     this.addCommand({
       id: 'insert-this',
@@ -501,6 +514,33 @@ class PromptSuggestModal extends FuzzySuggestModal<TFile> {
   
   onChooseItem(file: TFile): void {
     this.onSelect(file);
+  }
+}
+
+/**
+ * Toolset selector modal - shows available toolsets
+ */
+class ToolsSuggestModal extends FuzzySuggestModal<string> {
+  private toolsets: string[];
+  private onSelect: (toolset: string) => void;
+  
+  constructor(app: App, availableToolsets: string[], onSelect: (toolset: string) => void) {
+    super(app);
+    this.toolsets = availableToolsets;
+    this.onSelect = onSelect;
+    this.setPlaceholder('Select a toolset...');
+  }
+  
+  getItems(): string[] {
+    return this.toolsets;
+  }
+  
+  getItemText(toolset: string): string {
+    return toolset;
+  }
+  
+  onChooseItem(toolset: string): void {
+    this.onSelect(toolset);
   }
 }
 
