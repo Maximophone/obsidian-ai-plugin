@@ -295,9 +295,12 @@ export class AIService {
       throw error;
     }
     
-    // Check if this is an o-series reasoning model
+    // Check if this is an o-series reasoning model or GPT-5.x (which use max_completion_tokens)
     const isReasoningModel = model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
+    const isGpt5 = model.startsWith('gpt-5');
+    const usesCompletionTokens = isReasoningModel || isGpt5;
     log(`**Is reasoning model:** ${isReasoningModel}`);
+    log(`**Is GPT-5.x:** ${isGpt5}`);
     
     // Convert messages to OpenAI format
     const openaiMessages = messages.map(m => ({
@@ -319,22 +322,27 @@ export class AIService {
       messages: openaiMessages,
     };
     
-    if (isReasoningModel) {
-      // o-series models use different parameters
+    if (usesCompletionTokens) {
+      // o-series and GPT-5.x models use max_completion_tokens instead of max_tokens
       body.max_completion_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
       
-      // Add reasoning effort if thinking is enabled
-      if (options.thinking?.enabled) {
+      // Add reasoning effort if thinking is enabled (o-series only)
+      if (isReasoningModel && options.thinking?.enabled) {
         body.reasoning_effort = 'high';
         log(`**Reasoning effort:** high`);
       }
-      // Note: o-series doesn't support temperature parameter
+      
+      // GPT-5.x supports temperature, o-series doesn't
+      if (!isReasoningModel) {
+        body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
+      }
     } else {
       body.max_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
       body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
     }
     
-    log(`**Max tokens:** ${body.max_tokens || body.max_completion_tokens}`);
+    log(`**Max tokens param:** ${usesCompletionTokens ? 'max_completion_tokens' : 'max_tokens'}`);
+    log(`**Max tokens value:** ${body.max_tokens || body.max_completion_tokens}`);
     log(`**Temperature:** ${body.temperature ?? 'N/A (reasoning model)'}`);
     log(`**Messages count:** ${openaiMessages.length}`);
     log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
