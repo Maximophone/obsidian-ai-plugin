@@ -523,6 +523,36 @@ export class BlockProcessor {
       // Build conversation from block text, including images and PDFs
       const messages = this.parseConversation(processedText, images, pdfs);
       
+      // Check for mock mode
+      if (params.mock) {
+        new Notice('Mock mode: Skipping AI call', 2000);
+        
+        const mockResponse = {
+          content: params.mock,
+          inputTokens: 0,
+          outputTokens: 0,
+        };
+        
+        // Build mock response block
+        const escapedResponse = escapeTags(mockResponse.content, [
+          'ai', 'reply', 'model', 'system', 'doc', 'this', 'url', 'pdf', 'file', 
+          'prompt', 'tools', 'think', 'debug', 'temperature', 'max_tokens', 'image', 'mock'
+        ]);
+        
+        let tokenInfo = '';
+        if (this.plugin.settings.showTokenCount) {
+          tokenInfo = `${BEACON.TOKENS_PREFIX}In=0,Out=0 (MOCK)|==\n`;
+        }
+        
+        const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}**[MOCK RESPONSE]**\n${escapedResponse}\n${BEACON.ME}\n`;
+        
+        if (this.plugin.settings.playNotificationSound) {
+          this.playNotificationSound();
+        }
+        
+        return `<ai!${optionTxt}>${newBlock}</ai!>`;
+      }
+      
       // Show processing notice
       new Notice('Processing AI request...', 2000);
       
@@ -696,6 +726,7 @@ export class BlockProcessor {
     maxTokens?: number;
     debug?: boolean;
     thinking?: ThinkingConfig;
+    mock?: string;
   } {
     const params: Record<string, unknown> = {};
     
@@ -726,6 +757,10 @@ export class BlockProcessor {
             }
           }
           params.thinking = thinkingConfig;
+          break;
+        case 'mock':
+          // <mock!> for default response or <mock!custom response> for custom
+          params.mock = tag.value || 'This is a mock response for testing purposes.';
           break;
       }
     }
@@ -1008,6 +1043,8 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<THINK!>\` - Enable extended thinking (Claude, o-series, Gemini)
 - \`<THINK!16000>\` - Enable thinking with custom token budget
 - \`<DEBUG!>\` - Show debug info
+- \`<MOCK!>\` - Return mock response (no API call)
+- \`<MOCK!custom text>\` - Return custom mock response
 
 ## Thinking Mode
 
