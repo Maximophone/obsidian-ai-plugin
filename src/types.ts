@@ -36,6 +36,7 @@ export interface AIToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  thoughtSignature?: string; // For Gemini 3 models
 }
 
 // Tool result to send back to AI

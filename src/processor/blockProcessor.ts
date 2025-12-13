@@ -630,15 +630,22 @@ export class BlockProcessor {
       } as any);
       
       // Add tool results as user message
-      // Include both tool_use_id (for Anthropic) and name (for Gemini)
+      // Include both tool_use_id (for Anthropic) and name + thought_signature (for Gemini)
       const toolResultContents = toolResults.map((r, i) => {
         const toolCall = response.toolCalls![i];
-        return {
+        const result: Record<string, unknown> = {
           type: 'tool_result' as const,
           tool_use_id: r.toolCallId,
           name: toolCall?.name, // For Gemini
           content: r.error ? `Error: ${r.error}` : r.result || '',
         };
+        
+        // Include thought_signature if present (required for Gemini 3 models)
+        if (toolCall?.thoughtSignature) {
+          result.thought_signature = toolCall.thoughtSignature;
+        }
+        
+        return result;
       });
       conversationMessages.push({
         role: 'user',

@@ -559,16 +559,20 @@ export class AIService {
         };
       } else if (part.type === 'tool_result') {
         // Convert to Gemini function response format
-        // Gemini expects the response to be an object, not wrapped in "content"
-        return {
-          functionResponse: {
-            name: part.name || 'unknown',
-            response: {
-              name: part.name || 'unknown',
-              result: part.content,
-            },
+        // Gemini expects the response to be a simple object with the output
+        const functionResponse: Record<string, unknown> = {
+          name: part.name || 'unknown',
+          response: {
+            output: part.content,
           },
         };
+        
+        // Include thought_signature if present (required for Gemini 3 models)
+        if (part.thought_signature) {
+          functionResponse.thought_signature = part.thought_signature;
+        }
+        
+        return { functionResponse };
       }
       return part;
     });
@@ -747,11 +751,19 @@ export class AIService {
           content += part.text;
         } else if (part.functionCall) {
           // Gemini function call format
-          toolCalls.push({
+          const toolCall: AIToolCall = {
             id: `gemini-${Date.now()}-${toolCalls.length}`, // Gemini doesn't provide IDs
             name: part.functionCall.name,
             arguments: part.functionCall.args || {},
-          });
+          };
+          
+          // Capture thought_signature if present (required for Gemini 3 models)
+          if (part.thought_signature) {
+            toolCall.thoughtSignature = part.thought_signature;
+            log(`**Thought signature:** present`);
+          }
+          
+          toolCalls.push(toolCall);
           log(`**Tool call:** ${part.functionCall.name}(${JSON.stringify(part.functionCall.args)})`);
         }
       }
