@@ -57,13 +57,13 @@ export class AIService {
   /**
    * Convert AIMessage content to Anthropic format
    */
-  private convertToAnthropicContent(content: string | MessageContent[]): unknown {
+  private convertToAnthropicContent(content: string | MessageContent[] | unknown[]): unknown {
     if (typeof content === 'string') {
       return content;
     }
     
-    // Multi-part content with images and PDFs
-    return content.map(part => {
+    // If it's already an array, map each part
+    return (content as any[]).map(part => {
       if (part.type === 'text') {
         return { type: 'text', text: part.text };
       } else if (part.type === 'image') {
@@ -84,7 +84,11 @@ export class AIService {
             data: part.base64Data,
           },
         };
+      } else if (part.type === 'tool_use' || part.type === 'tool_result') {
+        // Pass through tool-related blocks unchanged
+        return part;
       }
+      // Pass through any other format unchanged
       return part;
     });
   }

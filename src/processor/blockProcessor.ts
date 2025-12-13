@@ -604,19 +604,31 @@ export class BlockProcessor {
         allDebugLog.push(`    Result: ${(result.result || result.error || '').substring(0, 100)}...`);
       }
       
-      // Add assistant message with tool calls to conversation
+      // Add assistant message with tool calls to conversation (Anthropic format)
+      // The assistant's response needs to include the tool_use blocks
+      const assistantContent: any[] = [];
+      if (response.content) {
+        assistantContent.push({ type: 'text', text: response.content });
+      }
+      for (const tc of response.toolCalls) {
+        assistantContent.push({
+          type: 'tool_use',
+          id: tc.id,
+          name: tc.name,
+          input: tc.arguments,
+        });
+      }
       conversationMessages.push({
         role: 'assistant',
-        content: response.content || '',
-        toolCalls: response.toolCalls,
-      } as AIMessage);
+        content: assistantContent,
+      } as any);
       
-      // Add tool results as user message
+      // Add tool results as user message (Anthropic format uses tool_use_id)
       conversationMessages.push({
         role: 'user',
         content: toolResults.map(r => ({
           type: 'tool_result' as const,
-          toolCallId: r.toolCallId,
+          tool_use_id: r.toolCallId,
           content: r.error ? `Error: ${r.error}` : r.result || '',
         })),
       } as any);
