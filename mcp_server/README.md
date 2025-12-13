@@ -4,8 +4,8 @@ A FastAPI-based Model Context Protocol (MCP) server that provides tools for the 
 
 ## Features
 
-- **Modular Toolset Architecture**: Easy to add new toolsets
-- **System Toolset**: Filesystem, shell, and Python execution
+- **Virtual MCP Servers**: Single process, multiple toolsets at different URL paths
+- **Modular Toolsets**: System, Gmail, Discord (each accessible independently)
 - **Security**: API key authentication + path sandboxing
 - **FastAPI**: Modern async Python framework with auto-generated docs
 
@@ -34,10 +34,43 @@ nano .env
 python server.py
 ```
 
-The server will start at `http://127.0.0.1:8765`.
+The server starts and exposes each toolset as a virtual MCP server:
 
-- API Docs: http://127.0.0.1:8765/docs
-- Health Check: http://127.0.0.1:8765/health
+```
+http://127.0.0.1:8765/mcp/system   → Filesystem/shell tools
+http://127.0.0.1:8765/mcp/gmail    → Email tools
+http://127.0.0.1:8765/mcp/discord  → Discord tools
+```
+
+API Docs: http://127.0.0.1:8765/docs
+
+### 4. Configure in Obsidian
+
+In Obsidian Settings → Obsidian AI → MCP Servers, add **separate entries** for each toolset:
+
+| Name | URL |
+|------|-----|
+| `system` | `http://127.0.0.1:8765/mcp/system` |
+| `gmail` | `http://127.0.0.1:8765/mcp/gmail` |
+| `discord` | `http://127.0.0.1:8765/mcp/discord` |
+
+Now you can use them independently:
+
+```markdown
+<ai!>
+<tools!mcp:system>   <!-- Only filesystem tools -->
+List files in my Documents folder
+<reply!>
+</ai!>
+```
+
+```markdown
+<ai!>
+<tools!mcp:gmail>    <!-- Only email tools -->
+Search for unread emails from today
+<reply!>
+</ai!>
+```
 
 ## Configuration
 
@@ -56,16 +89,29 @@ Environment variables (via `.env` file):
 
 All endpoints require authentication via `Authorization: Bearer <api_key>` header.
 
-### List Tools
+### List Available Toolsets
 ```
-GET /tools
+GET /mcp/toolsets
 ```
 
-Returns available tools and their definitions.
+### Per-Toolset Endpoints
 
-### Execute Tool
+Each toolset has its own endpoints:
+
 ```
-POST /execute
+GET  /mcp/{toolset}/health  - Health check
+GET  /mcp/{toolset}/tools   - List tools
+POST /mcp/{toolset}/execute - Execute a tool
+```
+
+Example - list system tools:
+```
+GET /mcp/system/tools
+```
+
+Example - execute a tool:
+```
+POST /mcp/system/execute
 Content-Type: application/json
 
 {
@@ -76,9 +122,14 @@ Content-Type: application/json
 }
 ```
 
-### Health Check
+### Legacy Endpoints (All Tools)
+
+For backward compatibility, these endpoints serve all enabled tools:
+
 ```
-GET /health
+GET  /health  - Health check (all toolsets)
+GET  /tools   - List all tools
+POST /execute - Execute any tool
 ```
 
 ## Available Toolsets
