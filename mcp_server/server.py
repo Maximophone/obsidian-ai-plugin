@@ -1,423 +1,247 @@
 #!/usr/bin/env python3
 """
-MCP Test Server - Provides filesystem tools for the Obsidian AI Plugin
+MCP Server - Model Context Protocol Server for Obsidian AI Plugin
 
-This is a simple HTTP server that exposes tools via a JSON API.
-The plugin connects to this server to execute tools that need
-access to the local filesystem.
+A FastAPI-based server that exposes tools via HTTP for the Obsidian AI plugin.
+Supports multiple toolsets (system, gmail, discord) with modular architecture.
 
-Protocol:
-- GET  /tools   - List available tools
-- POST /execute - Execute a tool
-- Headers: Authorization: Bearer <api_key>
+Usage:
+    python server.py
+    
+    Or with uvicorn directly:
+    uvicorn server:app --host 127.0.0.1 --port 8765 --reload
 """
 
-import json
-import os
-import sys
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Any
-from pathlib import Path
+import logging
+from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
 
-# Configuration
-API_KEY = os.environ.get("MCP_API_KEY", "dev-key-12345")
-PORT = int(os.environ.get("MCP_PORT", "8765"))
-# Base directory for filesystem operations (security: restrict to this path)
-BASE_DIR = os.environ.get("MCP_BASE_DIR", os.path.expanduser("~"))
+from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-
-# ============ Tool Definitions ============
-
-TOOLS = [
-    {
-        "name": "list_directory",
-        "description": "List files and directories at the specified path. Returns file names, types, and sizes.",
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": f"Absolute path to the directory to list. Must be under {BASE_DIR}",
-                "required": True,
-            },
-            "include_hidden": {
-                "type": "boolean",
-                "description": "Include hidden files (starting with dot). Default: false",
-                "required": False,
-                "default": False,
-            },
-        },
-        "safe": True,
-    },
-    {
-        "name": "read_file",
-        "description": "Read the contents of a file. Returns the file content as text.",
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": f"Absolute path to the file to read. Must be under {BASE_DIR}",
-                "required": True,
-            },
-            "max_lines": {
-                "type": "number",
-                "description": "Maximum number of lines to read. Default: 500",
-                "required": False,
-                "default": 500,
-            },
-        },
-        "safe": True,
-    },
-    {
-        "name": "create_file",
-        "description": "Create a new file with the specified content. Will fail if file already exists.",
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": f"Absolute path for the new file. Must be under {BASE_DIR}",
-                "required": True,
-            },
-            "content": {
-                "type": "string",
-                "description": "Content to write to the file",
-                "required": True,
-            },
-        },
-        "safe": False,  # Write operation - requires confirmation
-    },
-    {
-        "name": "write_file",
-        "description": "Write content to a file, overwriting if it exists. Use with caution.",
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": f"Absolute path to the file. Must be under {BASE_DIR}",
-                "required": True,
-            },
-            "content": {
-                "type": "string",
-                "description": "Content to write to the file",
-                "required": True,
-            },
-        },
-        "safe": False,  # Write operation - requires confirmation
-    },
-    {
-        "name": "append_to_file",
-        "description": "Append content to the end of an existing file.",
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": f"Absolute path to the file. Must be under {BASE_DIR}",
-                "required": True,
-            },
-            "content": {
-                "type": "string",
-                "description": "Content to append to the file",
-                "required": True,
-            },
-        },
-        "safe": False,  # Write operation - requires confirmation
-    },
-    {
-        "name": "create_directory",
-        "description": "Create a new directory (and parent directories if needed).",
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": f"Absolute path for the new directory. Must be under {BASE_DIR}",
-                "required": True,
-            },
-        },
-        "safe": False,  # Write operation - requires confirmation
-    },
-]
+from config import config
+from toolsets import get_enabled_toolsets, get_all_toolset_names
+from toolsets.base import tools_to_mcp_format, get_tool
 
 
-# ============ Tool Implementations ============
+# ============ Logging Setup ============
 
-def validate_path(path: str) -> str:
-    """Validate that path is under BASE_DIR. Returns resolved path or raises ValueError."""
-    resolved = os.path.realpath(os.path.expanduser(path))
-    base_resolved = os.path.realpath(BASE_DIR)
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("mcp_server")
+
+
+# ============ Request/Response Models ============
+
+class ToolExecuteRequest(BaseModel):
+    """Request to execute a tool."""
+    name: str
+    arguments: Dict[str, Any] = {}
+
+
+class ToolExecuteResponse(BaseModel):
+    """Response from tool execution."""
+    result: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ToolDefinitionResponse(BaseModel):
+    """Tool definition for API response."""
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    safe: bool
+
+
+class ToolsListResponse(BaseModel):
+    """Response listing all available tools."""
+    tools: List[ToolDefinitionResponse]
+    toolsets: List[str]
+
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+    status: str
+    version: str
+    toolsets: List[str]
+    tools_count: int
+
+
+# ============ Authentication ============
+
+async def verify_api_key(authorization: str = Header(None)) -> bool:
+    """Verify the API key from Authorization header."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     
-    if not resolved.startswith(base_resolved):
-        raise ValueError(f"Path must be under {BASE_DIR}")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid Authorization format. Use: Bearer <api_key>")
     
-    return resolved
+    token = authorization[7:]  # Remove "Bearer " prefix
+    
+    if token != config.API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    return True
 
 
-def format_size(size: int) -> str:
-    """Format byte size to human readable."""
-    if size < 1024:
-        return f"{size}B"
-    elif size < 1024 * 1024:
-        return f"{size / 1024:.1f}KB"
-    else:
-        return f"{size / (1024 * 1024):.1f}MB"
+# ============ Application Lifecycle ============
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup and shutdown."""
+    # Startup
+    logger.info("=" * 60)
+    logger.info("MCP Server Starting")
+    logger.info("=" * 60)
+    logger.info(f"Host: {config.HOST}:{config.PORT}")
+    logger.info(f"Base Directory: {config.BASE_DIR}")
+    logger.info(f"Enabled Toolsets: {config.ENABLED_TOOLSETS}")
+    
+    tools = get_enabled_toolsets(config.ENABLED_TOOLSETS)
+    logger.info(f"Loaded {len(tools)} tools:")
+    for tool in tools:
+        safe_marker = "✓" if tool.definition.safe else "⚠"
+        logger.info(f"  {safe_marker} {tool.definition.name}")
+    
+    logger.info("=" * 60)
+    
+    yield
+    
+    # Shutdown
+    logger.info("MCP Server Shutting Down")
 
 
-def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+# ============ FastAPI App ============
+
+app = FastAPI(
+    title="MCP Server",
+    description="Model Context Protocol Server for Obsidian AI Plugin",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS middleware for browser-based access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============ Endpoints ============
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check(authorized: bool = Depends(verify_api_key)):
+    """Health check endpoint."""
+    tools = get_enabled_toolsets(config.ENABLED_TOOLSETS)
+    return HealthResponse(
+        status="ok",
+        version="1.0.0",
+        toolsets=config.ENABLED_TOOLSETS,
+        tools_count=len(tools),
+    )
+
+
+@app.get("/tools", response_model=ToolsListResponse)
+async def list_tools(authorized: bool = Depends(verify_api_key)):
+    """List all available tools."""
+    tools = get_enabled_toolsets(config.ENABLED_TOOLSETS)
+    tool_defs = tools_to_mcp_format(tools)
+    
+    return ToolsListResponse(
+        tools=[ToolDefinitionResponse(**t) for t in tool_defs],
+        toolsets=config.ENABLED_TOOLSETS,
+    )
+
+
+@app.post("/execute", response_model=ToolExecuteResponse)
+async def execute_tool(
+    request: ToolExecuteRequest,
+    authorized: bool = Depends(verify_api_key)
+):
     """Execute a tool and return the result."""
+    logger.info(f"Executing tool: {request.name}")
+    logger.debug(f"Arguments: {request.arguments}")
+    
+    # Find the tool
+    tool = get_tool(request.name)
+    
+    if not tool:
+        logger.warning(f"Tool not found: {request.name}")
+        raise HTTPException(status_code=404, detail=f"Tool not found: {request.name}")
+    
+    # Check if tool is in an enabled toolset
+    enabled_tools = get_enabled_toolsets(config.ENABLED_TOOLSETS)
+    if tool not in enabled_tools:
+        logger.warning(f"Tool not enabled: {request.name}")
+        raise HTTPException(status_code=403, detail=f"Tool not enabled: {request.name}")
+    
     try:
-        if name == "list_directory":
-            return execute_list_directory(arguments)
-        elif name == "read_file":
-            return execute_read_file(arguments)
-        elif name == "create_file":
-            return execute_create_file(arguments)
-        elif name == "write_file":
-            return execute_write_file(arguments)
-        elif name == "append_to_file":
-            return execute_append_to_file(arguments)
-        elif name == "create_directory":
-            return execute_create_directory(arguments)
-        else:
-            return {"error": f"Unknown tool: {name}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def execute_list_directory(args: dict[str, Any]) -> dict[str, Any]:
-    """List directory contents."""
-    path = validate_path(args.get("path", ""))
-    include_hidden = args.get("include_hidden", False)
-    
-    if not os.path.isdir(path):
-        return {"error": f"Not a directory: {path}"}
-    
-    items = []
-    for entry in os.scandir(path):
-        if not include_hidden and entry.name.startswith("."):
-            continue
+        result = tool.execute(**request.arguments)
+        logger.info(f"Tool {request.name} completed successfully")
+        logger.debug(f"Result: {result[:200]}..." if len(result) > 200 else f"Result: {result}")
         
-        try:
-            stat = entry.stat()
-            item = {
-                "name": entry.name,
-                "type": "directory" if entry.is_dir() else "file",
-                "size": format_size(stat.st_size) if entry.is_file() else None,
-            }
-            items.append(item)
-        except (PermissionError, OSError):
-            items.append({
-                "name": entry.name,
-                "type": "unknown",
-                "error": "Permission denied",
-            })
-    
-    # Sort: directories first, then files, alphabetically
-    items.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
-    
+        return ToolExecuteResponse(result=result)
+        
+    except TypeError as e:
+        # Usually means wrong arguments
+        logger.error(f"Tool {request.name} argument error: {e}")
+        return ToolExecuteResponse(error=f"Invalid arguments: {str(e)}")
+        
+    except Exception as e:
+        logger.error(f"Tool {request.name} execution error: {e}", exc_info=True)
+        return ToolExecuteResponse(error=str(e))
+
+
+@app.get("/")
+async def root():
+    """Root endpoint - shows server info (no auth required)."""
     return {
-        "result": f"Contents of {path}:\n" + "\n".join(
-            f"{'📁' if i['type'] == 'directory' else '📄'} {i['name']}" + 
-            (f" ({i['size']})" if i.get('size') else "")
-            for i in items
-        ) if items else f"Directory {path} is empty."
+        "name": "MCP Server",
+        "version": "1.0.0",
+        "description": "Model Context Protocol Server for Obsidian AI Plugin",
+        "docs": "/docs",
+        "endpoints": {
+            "GET /health": "Health check (requires auth)",
+            "GET /tools": "List available tools (requires auth)",
+            "POST /execute": "Execute a tool (requires auth)",
+        }
     }
 
 
-def execute_read_file(args: dict[str, Any]) -> dict[str, Any]:
-    """Read file contents."""
-    path = validate_path(args.get("path", ""))
-    max_lines = args.get("max_lines", 500)
-    
-    if not os.path.isfile(path):
-        return {"error": f"Not a file: {path}"}
-    
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = []
-            for i, line in enumerate(f, 1):
-                if i > max_lines:
-                    lines.append(f"\n... (truncated at {max_lines} lines)")
-                    break
-                lines.append(f"{i:6}| {line.rstrip()}")
-        
-        return {"result": "\n".join(lines)}
-    except UnicodeDecodeError:
-        return {"error": f"Cannot read file (binary or non-UTF8): {path}"}
-
-
-def execute_create_file(args: dict[str, Any]) -> dict[str, Any]:
-    """Create a new file."""
-    path = validate_path(args.get("path", ""))
-    content = args.get("content", "")
-    
-    if os.path.exists(path):
-        return {"error": f"File already exists: {path}. Use write_file to overwrite."}
-    
-    # Create parent directories if needed
-    parent = os.path.dirname(path)
-    if parent and not os.path.exists(parent):
-        os.makedirs(parent)
-    
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    
-    size = os.path.getsize(path)
-    return {"result": f"Created file: {path} ({format_size(size)})"}
-
-
-def execute_write_file(args: dict[str, Any]) -> dict[str, Any]:
-    """Write/overwrite a file."""
-    path = validate_path(args.get("path", ""))
-    content = args.get("content", "")
-    
-    # Create parent directories if needed
-    parent = os.path.dirname(path)
-    if parent and not os.path.exists(parent):
-        os.makedirs(parent)
-    
-    existed = os.path.exists(path)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-    
-    size = os.path.getsize(path)
-    action = "Overwrote" if existed else "Created"
-    return {"result": f"{action} file: {path} ({format_size(size)})"}
-
-
-def execute_append_to_file(args: dict[str, Any]) -> dict[str, Any]:
-    """Append to a file."""
-    path = validate_path(args.get("path", ""))
-    content = args.get("content", "")
-    
-    if not os.path.isfile(path):
-        return {"error": f"File not found: {path}. Use create_file to create it."}
-    
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(content)
-    
-    size = os.path.getsize(path)
-    return {"result": f"Appended to file: {path} (now {format_size(size)})"}
-
-
-def execute_create_directory(args: dict[str, Any]) -> dict[str, Any]:
-    """Create a directory."""
-    path = validate_path(args.get("path", ""))
-    
-    if os.path.exists(path):
-        if os.path.isdir(path):
-            return {"result": f"Directory already exists: {path}"}
-        else:
-            return {"error": f"Path exists but is not a directory: {path}"}
-    
-    os.makedirs(path)
-    return {"result": f"Created directory: {path}"}
-
-
-# ============ HTTP Handler ============
-
-class MCPHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for MCP protocol."""
-    
-    def log_message(self, format, *args):
-        """Custom logging."""
-        print(f"[MCP] {args[0]}")
-    
-    def send_json(self, data: Any, status: int = 200):
-        """Send JSON response."""
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
-    
-    def check_auth(self) -> bool:
-        """Verify API key authentication."""
-        auth = self.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:]
-            return token == API_KEY
-        return False
-    
-    def do_OPTIONS(self):
-        """Handle CORS preflight."""
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-        self.end_headers()
-    
-    def do_GET(self):
-        """Handle GET requests."""
-        if not self.check_auth():
-            self.send_json({"error": "Unauthorized"}, 401)
-            return
-        
-        if self.path == "/tools":
-            # Return tool definitions
-            self.send_json({"tools": TOOLS})
-        elif self.path == "/health":
-            self.send_json({"status": "ok", "version": "1.0.0"})
-        else:
-            self.send_json({"error": "Not found"}, 404)
-    
-    def do_POST(self):
-        """Handle POST requests."""
-        if not self.check_auth():
-            self.send_json({"error": "Unauthorized"}, 401)
-            return
-        
-        if self.path == "/execute":
-            # Read request body
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length).decode("utf-8")
-            
-            try:
-                data = json.loads(body)
-            except json.JSONDecodeError:
-                self.send_json({"error": "Invalid JSON"}, 400)
-                return
-            
-            name = data.get("name")
-            arguments = data.get("arguments", {})
-            
-            if not name:
-                self.send_json({"error": "Missing tool name"}, 400)
-                return
-            
-            # Execute the tool
-            result = execute_tool(name, arguments)
-            self.send_json(result)
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
+# ============ Main Entry Point ============
 
 def main():
-    """Start the MCP server."""
+    """Run the server."""
+    import uvicorn
+    
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
-║                    MCP Test Server                           ║
+║                       MCP Server                             ║
 ╠══════════════════════════════════════════════════════════════╣
-║  Port:     {PORT:<48} ║
-║  Base Dir: {BASE_DIR:<48} ║
-║  API Key:  {API_KEY[:20] + '...' if len(API_KEY) > 20 else API_KEY:<48} ║
+║  Host:       {config.HOST}:{config.PORT:<43} ║
+║  Base Dir:   {str(config.BASE_DIR)[:45]:<45} ║
+║  Toolsets:   {', '.join(config.ENABLED_TOOLSETS)[:45]:<45} ║
 ╠══════════════════════════════════════════════════════════════╣
-║  Endpoints:                                                  ║
-║    GET  /tools   - List available tools                      ║
-║    POST /execute - Execute a tool                            ║
-║    GET  /health  - Health check                              ║
-╠══════════════════════════════════════════════════════════════╣
-║  Available Tools:                                            ║
-║    • list_directory  - List files in a directory             ║
-║    • read_file       - Read file contents                    ║
-║    • create_file     - Create a new file                     ║
-║    • write_file      - Write/overwrite a file                ║
-║    • append_to_file  - Append to existing file               ║
-║    • create_directory - Create a directory                   ║
+║  API Docs:   http://{config.HOST}:{config.PORT}/docs{' ' * 30} ║
 ╚══════════════════════════════════════════════════════════════╝
 """)
     
-    server = HTTPServer(("127.0.0.1", PORT), MCPHandler)
-    print(f"Starting server on http://127.0.0.1:{PORT}")
-    
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-        server.shutdown()
+    uvicorn.run(
+        "server:app",
+        host=config.HOST,
+        port=config.PORT,
+        reload=False,
+        log_level=config.LOG_LEVEL.lower(),
+    )
 
 
 if __name__ == "__main__":
     main()
-
