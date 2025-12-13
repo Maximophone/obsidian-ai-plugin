@@ -276,15 +276,28 @@ export class AIService {
       temperature?: number;
       maxTokens?: number;
       thinking?: ThinkingConfig;
+      debug?: boolean;
     }
   ): Promise<AIResponse> {
+    const debugLog: string[] = [];
+    const log = (msg: string) => {
+      if (options.debug) debugLog.push(msg);
+    };
+    
+    log(`**Provider:** OpenAI`);
+    log(`**Model:** ${model}`);
+    
     const apiKey = this.plugin.settings.openaiApiKey;
     if (!apiKey) {
-      throw new Error('OpenAI API key not configured. Please add it in settings.');
+      log(`**Error:** API key not configured`);
+      const error = new Error('OpenAI API key not configured. Please add it in settings.');
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     // Check if this is an o-series reasoning model
     const isReasoningModel = model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
+    log(`**Is reasoning model:** ${isReasoningModel}`);
     
     // Convert messages to OpenAI format
     const openaiMessages = messages.map(m => ({
@@ -298,6 +311,7 @@ export class AIService {
         role: isReasoningModel ? 'developer' : 'system',
         content: options.systemPrompt,
       });
+      log(`**System prompt:** (${options.systemPrompt.length} chars)`);
     }
     
     const body: Record<string, unknown> = {
@@ -312,6 +326,7 @@ export class AIService {
       // Add reasoning effort if thinking is enabled
       if (options.thinking?.enabled) {
         body.reasoning_effort = 'high';
+        log(`**Reasoning effort:** high`);
       }
       // Note: o-series doesn't support temperature parameter
     } else {
@@ -319,26 +334,56 @@ export class AIService {
       body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
     }
     
+    log(`**Max tokens:** ${body.max_tokens || body.max_completion_tokens}`);
+    log(`**Temperature:** ${body.temperature ?? 'N/A (reasoning model)'}`);
+    log(`**Messages count:** ${openaiMessages.length}`);
+    log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
+    
     const requestParams: RequestUrlParam = {
       url: 'https://api.openai.com/v1/chat/completions',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer [REDACTED]`,
       },
       body: JSON.stringify(body),
     };
     
-    const response = await requestUrl(requestParams);
+    let response;
+    try {
+      response = await requestUrl({
+        ...requestParams,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
+    } catch (e) {
+      log(`\n**Request failed:** ${e.message || String(e)}`);
+      const error = new Error(`OpenAI API error: ${e.message || String(e)}`);
+      (error as any).debugLog = debugLog;
+      throw error;
+    }
+    
+    log(`\n**Response status:** ${response.status}`);
     
     if (response.status !== 200) {
-      throw new Error(`OpenAI API error: ${response.status} - ${response.text}`);
+      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
+      const error = new Error(`OpenAI API error: ${response.status} - ${response.text}`);
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     const data = response.json;
+    log(`**Response received successfully**`);
+    log(`**Input tokens:** ${data.usage?.prompt_tokens}`);
+    log(`**Output tokens:** ${data.usage?.completion_tokens}`);
     
     // For o-series, include reasoning token count in thinking info
     const reasoningTokens = data.usage?.completion_tokens_details?.reasoning_tokens;
+    if (reasoningTokens) {
+      log(`**Reasoning tokens:** ${reasoningTokens}`);
+    }
     
     return {
       content: data.choices[0]?.message?.content || '',
@@ -346,6 +391,7 @@ export class AIService {
       thinking: reasoningTokens ? `[Reasoning used ${reasoningTokens} tokens]` : undefined,
       inputTokens: data.usage?.prompt_tokens,
       outputTokens: data.usage?.completion_tokens,
+      debugLog: options.debug ? debugLog : undefined,
     };
   }
   
@@ -391,11 +437,23 @@ export class AIService {
       temperature?: number;
       maxTokens?: number;
       thinking?: ThinkingConfig;
+      debug?: boolean;
     }
   ): Promise<AIResponse> {
+    const debugLog: string[] = [];
+    const log = (msg: string) => {
+      if (options.debug) debugLog.push(msg);
+    };
+    
+    log(`**Provider:** Google`);
+    log(`**Model:** ${model}`);
+    
     const apiKey = this.plugin.settings.googleApiKey;
     if (!apiKey) {
-      throw new Error('Google AI API key not configured. Please add it in settings.');
+      log(`**Error:** API key not configured`);
+      const error = new Error('Google AI API key not configured. Please add it in settings.');
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     // Check if this is a thinking model
@@ -407,8 +465,12 @@ export class AIService {
       // Try to use thinking variant if available
       if (model.includes('gemini-flash') || model === 'gemini-flash') {
         actualModel = 'gemini-2.0-flash-thinking-exp';
+        log(`**Switched to thinking model:** ${actualModel}`);
       }
     }
+    
+    log(`**Actual model:** ${actualModel}`);
+    log(`**Is thinking model:** ${isThinkingModel || actualModel.includes('thinking')}`);
     
     // Convert messages to Gemini format
     const contents = [];
@@ -419,6 +481,7 @@ export class AIService {
       systemInstruction = {
         parts: [{ text: options.systemPrompt }],
       };
+      log(`**System prompt:** (${options.systemPrompt.length} chars)`);
     }
     
     for (const msg of messages) {
@@ -448,7 +511,12 @@ export class AIService {
       generationConfig.thinkingConfig = {
         thinkingBudget: options.thinking.budgetTokens,
       };
+      log(`**Thinking budget:** ${options.thinking.budgetTokens}`);
     }
+    
+    log(`**Max tokens:** ${generationConfig.maxOutputTokens}`);
+    log(`**Temperature:** ${generationConfig.temperature}`);
+    log(`**Messages count:** ${contents.length}`);
     
     const body: Record<string, unknown> = {
       contents,
@@ -459,8 +527,10 @@ export class AIService {
       body.systemInstruction = systemInstruction;
     }
     
+    log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
+    
     const requestParams: RequestUrlParam = {
-      url: `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=${apiKey}`,
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=[REDACTED]`,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -468,13 +538,32 @@ export class AIService {
       body: JSON.stringify(body),
     };
     
-    const response = await requestUrl(requestParams);
+    log(`**Request URL:** https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent`);
+    
+    let response;
+    try {
+      response = await requestUrl({
+        ...requestParams,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=${apiKey}`,
+      });
+    } catch (e) {
+      log(`\n**Request failed:** ${e.message || String(e)}`);
+      const error = new Error(`Google AI API error: ${e.message || String(e)}`);
+      (error as any).debugLog = debugLog;
+      throw error;
+    }
+    
+    log(`\n**Response status:** ${response.status}`);
     
     if (response.status !== 200) {
-      throw new Error(`Google AI API error: ${response.status} - ${response.text}`);
+      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
+      const error = new Error(`Google AI API error: ${response.status} - ${response.text}`);
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     const data = response.json;
+    log(`**Response received successfully**`);
     
     // Extract text and thinking from response
     let content = '';
@@ -494,12 +583,19 @@ export class AIService {
     // For thinking models, check thinkingMetadata
     const thinkingTokens = data.usageMetadata?.thoughtsTokenCount;
     
+    log(`**Input tokens:** ${data.usageMetadata?.promptTokenCount}`);
+    log(`**Output tokens:** ${data.usageMetadata?.candidatesTokenCount}`);
+    if (thinkingTokens) {
+      log(`**Thinking tokens:** ${thinkingTokens}`);
+    }
+    
     return {
       content,
       thinking: thinking || (thinkingTokens ? `[Thinking used ${thinkingTokens} tokens]` : undefined),
       thinkingTokens,
       inputTokens: data.usageMetadata?.promptTokenCount,
       outputTokens: data.usageMetadata?.candidatesTokenCount,
+      debugLog: options.debug ? debugLog : undefined,
     };
   }
   
@@ -513,11 +609,23 @@ export class AIService {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
+      debug?: boolean;
     }
   ): Promise<AIResponse> {
+    const debugLog: string[] = [];
+    const log = (msg: string) => {
+      if (options.debug) debugLog.push(msg);
+    };
+    
+    log(`**Provider:** DeepSeek`);
+    log(`**Model:** ${model}`);
+    
     const apiKey = this.plugin.settings.deepseekApiKey;
     if (!apiKey) {
-      throw new Error('DeepSeek API key not configured. Please add it in settings.');
+      log(`**Error:** API key not configured`);
+      const error = new Error('DeepSeek API key not configured. Please add it in settings.');
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     // DeepSeek uses OpenAI-compatible API
@@ -531,6 +639,7 @@ export class AIService {
         role: 'system',
         content: options.systemPrompt,
       });
+      log(`**System prompt:** (${options.systemPrompt.length} chars)`);
     }
     
     const body: Record<string, unknown> = {
@@ -540,28 +649,48 @@ export class AIService {
       temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
     };
     
-    const requestParams: RequestUrlParam = {
-      url: 'https://api.deepseek.com/chat/completions',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    };
+    log(`**Max tokens:** ${body.max_tokens}`);
+    log(`**Temperature:** ${body.temperature}`);
+    log(`**Messages count:** ${deepseekMessages.length}`);
+    log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
     
-    const response = await requestUrl(requestParams);
+    let response;
+    try {
+      response = await requestUrl({
+        url: 'https://api.deepseek.com/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      log(`\n**Request failed:** ${e.message || String(e)}`);
+      const error = new Error(`DeepSeek API error: ${e.message || String(e)}`);
+      (error as any).debugLog = debugLog;
+      throw error;
+    }
+    
+    log(`\n**Response status:** ${response.status}`);
     
     if (response.status !== 200) {
-      throw new Error(`DeepSeek API error: ${response.status} - ${response.text}`);
+      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
+      const error = new Error(`DeepSeek API error: ${response.status} - ${response.text}`);
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     const data = response.json;
+    log(`**Response received successfully**`);
+    log(`**Input tokens:** ${data.usage?.prompt_tokens}`);
+    log(`**Output tokens:** ${data.usage?.completion_tokens}`);
     
     return {
       content: data.choices[0]?.message?.content || '',
       inputTokens: data.usage?.prompt_tokens,
       outputTokens: data.usage?.completion_tokens,
+      debugLog: options.debug ? debugLog : undefined,
     };
   }
   
@@ -575,11 +704,23 @@ export class AIService {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
+      debug?: boolean;
     }
   ): Promise<AIResponse> {
+    const debugLog: string[] = [];
+    const log = (msg: string) => {
+      if (options.debug) debugLog.push(msg);
+    };
+    
+    log(`**Provider:** Perplexity`);
+    log(`**Model:** ${model}`);
+    
     const apiKey = this.plugin.settings.perplexityApiKey;
     if (!apiKey) {
-      throw new Error('Perplexity API key not configured. Please add it in settings.');
+      log(`**Error:** API key not configured`);
+      const error = new Error('Perplexity API key not configured. Please add it in settings.');
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     // Perplexity uses OpenAI-compatible API
@@ -593,6 +734,7 @@ export class AIService {
         role: 'system',
         content: options.systemPrompt,
       });
+      log(`**System prompt:** (${options.systemPrompt.length} chars)`);
     }
     
     const body: Record<string, unknown> = {
@@ -602,28 +744,48 @@ export class AIService {
       temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
     };
     
-    const requestParams: RequestUrlParam = {
-      url: 'https://api.perplexity.ai/chat/completions',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    };
+    log(`**Max tokens:** ${body.max_tokens}`);
+    log(`**Temperature:** ${body.temperature}`);
+    log(`**Messages count:** ${perplexityMessages.length}`);
+    log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
     
-    const response = await requestUrl(requestParams);
+    let response;
+    try {
+      response = await requestUrl({
+        url: 'https://api.perplexity.ai/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      log(`\n**Request failed:** ${e.message || String(e)}`);
+      const error = new Error(`Perplexity API error: ${e.message || String(e)}`);
+      (error as any).debugLog = debugLog;
+      throw error;
+    }
+    
+    log(`\n**Response status:** ${response.status}`);
     
     if (response.status !== 200) {
-      throw new Error(`Perplexity API error: ${response.status} - ${response.text}`);
+      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
+      const error = new Error(`Perplexity API error: ${response.status} - ${response.text}`);
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     const data = response.json;
+    log(`**Response received successfully**`);
+    log(`**Input tokens:** ${data.usage?.prompt_tokens}`);
+    log(`**Output tokens:** ${data.usage?.completion_tokens}`);
     
     return {
       content: data.choices[0]?.message?.content || '',
       inputTokens: data.usage?.prompt_tokens,
       outputTokens: data.usage?.completion_tokens,
+      debugLog: options.debug ? debugLog : undefined,
     };
   }
   
