@@ -1,7 +1,7 @@
 {
-  "id": "obsidian-ai",
-  "name": "Obsidian AI",
-  "version": "0.1.0",
+  "id": "inline-ai",
+  "name": "Inline AI",
+  "version": "0.1.1",
   "minAppVersion": "1.0.0",
   "description": "Add AI capabilities directly into your notes using simple tags. Write questions, save the file, get AI responses inline.",
   "author": "Maxime Fournes",

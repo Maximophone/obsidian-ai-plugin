@@ -1,4 +1,4 @@
-# Obsidian AI Plugin
+# Inline AI
 
 Add AI capabilities directly into your Obsidian notes. Write questions, reference documents, include images—and get AI responses inline.
 
