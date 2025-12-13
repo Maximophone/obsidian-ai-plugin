@@ -551,12 +551,19 @@ export class AIService {
         };
       } else if (part.type === 'tool_use') {
         // Convert to Gemini function call format
-        return {
+        const functionCallPart: Record<string, unknown> = {
           functionCall: {
             name: part.name,
             args: part.input,
           },
         };
+        
+        // Include thought_signature if present (required for Gemini 3 models)
+        if (part.thought_signature) {
+          functionCallPart.thought_signature = part.thought_signature;
+        }
+        
+        return functionCallPart;
       } else if (part.type === 'tool_result') {
         // Convert to Gemini function response format
         // Gemini expects the response to be a simple object with the output

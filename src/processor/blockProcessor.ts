@@ -610,19 +610,27 @@ export class BlockProcessor {
         log(`    Result: ${(result.result || result.error || '').substring(0, 100)}...`);
       }
       
-      // Add assistant message with tool calls to conversation (Anthropic format)
+      // Add assistant message with tool calls to conversation
       // The assistant's response needs to include the tool_use blocks
+      // For Gemini 3, we must also include thought_signature if present
       const assistantContent: any[] = [];
       if (response.content) {
         assistantContent.push({ type: 'text', text: response.content });
       }
       for (const tc of response.toolCalls) {
-        assistantContent.push({
+        const toolUseBlock: Record<string, unknown> = {
           type: 'tool_use',
           id: tc.id,
           name: tc.name,
           input: tc.arguments,
-        });
+        };
+        
+        // Include thought_signature if present (required for Gemini 3 models)
+        if (tc.thoughtSignature) {
+          toolUseBlock.thought_signature = tc.thoughtSignature;
+        }
+        
+        assistantContent.push(toolUseBlock);
       }
       conversationMessages.push({
         role: 'assistant',
