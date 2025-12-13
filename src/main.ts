@@ -65,19 +65,10 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
-    // Insert model tag (manual)
+    // Insert model with selector
     this.addCommand({
       id: 'insert-model',
       name: 'Insert model tag',
-      editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<model!>', 7);
-      },
-    });
-    
-    // Insert model with selector
-    this.addCommand({
-      id: 'insert-model-picker',
-      name: 'Insert model (with selector)',
       editorCallback: (editor) => {
         const models = getAllModels(this.settings);
         new ModelSuggestModal(this.app, models, (model) => {
@@ -104,19 +95,10 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
-    // Insert doc tag (manual)
+    // Insert doc with note selector
     this.addCommand({
       id: 'insert-doc',
       name: 'Insert document reference tag',
-      editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<doc!"[[...]]">', 8);
-      },
-    });
-    
-    // Insert doc with note selector
-    this.addCommand({
-      id: 'insert-doc-picker',
-      name: 'Insert document reference (with note selector)',
       editorCallback: (editor) => {
         new NoteSuggestModal(this.app, (file) => {
           // Use wiki-link style for vault notes, wrapped in quotes
@@ -170,41 +152,12 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
-    // ========== File/Image/PDF tags (manual entry) ==========
-    
-    // Insert file tag (manual)
-    this.addCommand({
-      id: 'insert-file',
-      name: 'Insert file tag',
-      editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<file!"...">', 7);
-      },
-    });
-    
-    // Insert image tag (manual)
-    this.addCommand({
-      id: 'insert-image',
-      name: 'Insert image tag',
-      editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<image!"...">', 8);
-      },
-    });
-    
-    // Insert PDF tag (manual)
-    this.addCommand({
-      id: 'insert-pdf',
-      name: 'Insert PDF tag',
-      editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<pdf!"...">', 6);
-      },
-    });
-    
     // ========== File picker commands (Desktop only) ==========
     
     // Insert file with picker
     this.addCommand({
-      id: 'insert-file-picker',
-      name: 'Insert file (with file picker)',
+      id: 'insert-file',
+      name: 'Insert file tag',
       editorCallback: async (editor) => {
         await this.insertFileWithPicker(editor, 'file');
       },
@@ -212,8 +165,8 @@ export default class ObsidianAIPlugin extends Plugin {
     
     // Insert image with picker
     this.addCommand({
-      id: 'insert-image-picker',
-      name: 'Insert image (with file picker)',
+      id: 'insert-image',
+      name: 'Insert image tag',
       editorCallback: async (editor) => {
         await this.insertFileWithPicker(editor, 'image');
       },
@@ -221,8 +174,8 @@ export default class ObsidianAIPlugin extends Plugin {
     
     // Insert PDF with picker
     this.addCommand({
-      id: 'insert-pdf-picker',
-      name: 'Insert PDF (with file picker)',
+      id: 'insert-pdf',
+      name: 'Insert PDF tag',
       editorCallback: async (editor) => {
         await this.insertFileWithPicker(editor, 'pdf');
       },
