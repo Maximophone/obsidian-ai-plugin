@@ -24,6 +24,7 @@ export class AIService {
       temperature?: number;
       maxTokens?: number;
       thinking?: ThinkingConfig;
+      debug?: boolean;
     } = {}
   ): Promise<AIResponse> {
     const modelAlias = options.model || this.plugin.settings.defaultModel;
@@ -97,6 +98,7 @@ export class AIService {
       temperature?: number;
       maxTokens?: number;
       thinking?: ThinkingConfig;
+      debug?: boolean;
     }
   ): Promise<AIResponse> {
     const apiKey = this.plugin.settings.anthropicApiKey;
@@ -147,6 +149,11 @@ export class AIService {
       body.system = systemPrompt;
     }
     
+    // Debug logging
+    if (options.debug) {
+      console.log('[Anthropic Debug] Request body:', JSON.stringify(body, null, 2));
+    }
+    
     const requestParams: RequestUrlParam = {
       url: 'https://api.anthropic.com/v1/messages',
       method: 'POST',
@@ -160,8 +167,16 @@ export class AIService {
     
     const response = await requestUrl(requestParams);
     
+    if (options.debug) {
+      console.log('[Anthropic Debug] Response status:', response.status);
+      console.log('[Anthropic Debug] Response:', response.text.substring(0, 1000));
+    }
+    
     if (response.status !== 200) {
-      throw new Error(`Anthropic API error: ${response.status} - ${response.text}`);
+      const errorDetail = options.debug 
+        ? `\n\nRequest body:\n${JSON.stringify(body, null, 2)}\n\nResponse:\n${response.text}`
+        : '';
+      throw new Error(`Anthropic API error: ${response.status} - ${response.text}${errorDetail}`);
     }
     
     const data = response.json;
@@ -178,8 +193,14 @@ export class AIService {
       }
     }
     
+    // Add debug info to response if enabled
+    let debugInfo = '';
+    if (options.debug) {
+      debugInfo = `\n\n---\n**Debug Info:**\n- Model: ${model}\n- Thinking: ${options.thinking?.enabled ? 'enabled' : 'disabled'}\n- Temperature: ${body.temperature}\n- Max tokens: ${body.max_tokens}\n`;
+    }
+    
     return {
-      content,
+      content: content + debugInfo,
       thinking: thinking || undefined,
       inputTokens: data.usage?.input_tokens,
       outputTokens: data.usage?.output_tokens,

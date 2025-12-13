@@ -434,6 +434,7 @@ export class BlockProcessor {
         temperature: params.temperature,
         maxTokens: params.maxTokens,
         thinking: params.thinking,
+        debug: params.debug,
       });
       
       // Escape any tags in the response
