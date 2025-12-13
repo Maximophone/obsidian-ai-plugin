@@ -459,7 +459,13 @@ export class BlockProcessor {
         thinkingBlock = `${BEACON.THOUGHT}\n${escapedThinking}\n${BEACON.END_THOUGHT}\n`;
       }
       
-      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${escapedResponse}\n${BEACON.ME}\n`;
+      // Add debug log if present
+      let debugBlock = '';
+      if (response.debugLog && response.debugLog.length > 0) {
+        debugBlock = `\n---\n### Debug Log\n${response.debugLog.join('\n')}\n---\n`;
+      }
+      
+      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${escapedResponse}${debugBlock}\n${BEACON.ME}\n`;
       
       // Play notification sound if enabled
       if (this.plugin.settings.playNotificationSound) {
@@ -470,8 +476,16 @@ export class BlockProcessor {
       
     } catch (error) {
       console.error('Error processing AI block:', error);
+      
+      // Extract debug log from error if present
+      let debugBlock = '';
+      if ((error as any).debugLog && Array.isArray((error as any).debugLog)) {
+        const debugLog = (error as any).debugLog as string[];
+        debugBlock = `\n---\n### Debug Log\n${debugLog.join('\n')}\n---\n`;
+      }
+      
       // Use blockWithoutReply (not original) to prevent infinite loop - reply tag is already removed
-      const errorBlock = `${blockWithoutReply}${BEACON.ERROR}\n\`\`\`\n${error.message}\n\`\`\`\n`;
+      const errorBlock = `${blockWithoutReply}${BEACON.ERROR}\n\`\`\`\n${error.message}\n\`\`\`${debugBlock}\n`;
       return `<ai!${optionTxt}>${errorBlock}</ai!>`;
     }
   }

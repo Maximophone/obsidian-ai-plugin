@@ -38,6 +38,7 @@ export interface AIResponse {
   toolCalls?: ToolCall[];
   inputTokens?: number;
   outputTokens?: number;
+  debugLog?: string[];        // Debug log entries
 }
 
 // Thinking configuration for AI requests

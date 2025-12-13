@@ -101,9 +101,20 @@ export class AIService {
       debug?: boolean;
     }
   ): Promise<AIResponse> {
+    const debugLog: string[] = [];
+    const log = (msg: string) => {
+      if (options.debug) debugLog.push(msg);
+    };
+    
+    log(`**Provider:** Anthropic`);
+    log(`**Model:** ${model}`);
+    
     const apiKey = this.plugin.settings.anthropicApiKey;
     if (!apiKey) {
-      throw new Error('Anthropic API key not configured. Please add it in settings.');
+      log(`**Error:** API key not configured`);
+      const error = new Error('Anthropic API key not configured. Please add it in settings.');
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     // Convert messages to Anthropic format
@@ -133,6 +144,9 @@ export class AIService {
     if (options.thinking?.enabled) {
       // Check if model supports thinking
       const thinkingCapability = THINKING_CAPABLE_MODELS[model];
+      log(`**Thinking requested:** yes (budget: ${options.thinking.budgetTokens || 10000})`);
+      log(`**Model thinking capability:** ${thinkingCapability || 'unknown'}`);
+      
       if (thinkingCapability === 'full') {
         body.thinking = {
           type: 'enabled',
@@ -140,6 +154,8 @@ export class AIService {
         };
         // When thinking is enabled, temperature must be 1 for Claude
         body.temperature = 1;
+      } else {
+        log(`**Warning:** Model may not support extended thinking`);
       }
     } else {
       body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
@@ -147,29 +163,35 @@ export class AIService {
     
     if (systemPrompt) {
       body.system = systemPrompt;
+      log(`**System prompt:** (${systemPrompt.length} chars)`);
     }
     
-    // Debug logging
-    if (options.debug) {
-      console.log('[Anthropic Debug] Request body:', JSON.stringify(body, null, 2));
-    }
+    log(`**Temperature:** ${body.temperature}`);
+    log(`**Max tokens:** ${body.max_tokens}`);
+    log(`**Messages count:** ${anthropicMessages.length}`);
     
     // Use newer API version when thinking is enabled
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
+      'x-api-key': '[REDACTED]',
       'anthropic-version': '2023-06-01',
     };
     
     // Extended thinking requires the interleaved-thinking beta header
     if (options.thinking?.enabled && body.thinking) {
       headers['anthropic-beta'] = 'interleaved-thinking-2025-05-14';
+      log(`**Beta header:** interleaved-thinking-2025-05-14`);
     }
+    
+    log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
     
     const requestParams: RequestUrlParam = {
       url: 'https://api.anthropic.com/v1/messages',
       method: 'POST',
-      headers,
+      headers: {
+        ...headers,
+        'x-api-key': apiKey, // Use actual key for request
+      },
       body: JSON.stringify(body),
     };
     
@@ -177,27 +199,25 @@ export class AIService {
     try {
       response = await requestUrl(requestParams);
     } catch (e) {
-      // requestUrl throws on non-2xx responses, extract details
-      if (options.debug) {
-        console.log('[Anthropic Debug] Request failed:', e);
-      }
-      const errorMsg = e.message || String(e);
-      throw new Error(`Anthropic API error: ${errorMsg}`);
+      log(`\n**Request failed:** ${e.message || String(e)}`);
+      const error = new Error(`Anthropic API error: ${e.message || String(e)}`);
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
-    if (options.debug) {
-      console.log('[Anthropic Debug] Response status:', response.status);
-      console.log('[Anthropic Debug] Response:', response.text.substring(0, 1000));
-    }
+    log(`\n**Response status:** ${response.status}`);
     
     if (response.status !== 200) {
-      const errorDetail = options.debug 
-        ? `\n\nRequest body:\n${JSON.stringify(body, null, 2)}\n\nResponse:\n${response.text}`
-        : '';
-      throw new Error(`Anthropic API error: ${response.status} - ${response.text}${errorDetail}`);
+      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
+      const error = new Error(`Anthropic API error: ${response.status} - ${response.text}`);
+      (error as any).debugLog = debugLog;
+      throw error;
     }
     
     const data = response.json;
+    log(`**Response received successfully**`);
+    log(`**Input tokens:** ${data.usage?.input_tokens}`);
+    log(`**Output tokens:** ${data.usage?.output_tokens}`);
     
     // Extract text and thinking content
     let content = '';
@@ -208,20 +228,16 @@ export class AIService {
         content += block.text;
       } else if (block.type === 'thinking') {
         thinking += block.thinking;
+        log(`**Thinking block received:** ${block.thinking.length} chars`);
       }
     }
     
-    // Add debug info to response if enabled
-    let debugInfo = '';
-    if (options.debug) {
-      debugInfo = `\n\n---\n**Debug Info:**\n- Model: ${model}\n- Thinking: ${options.thinking?.enabled ? 'enabled' : 'disabled'}\n- Temperature: ${body.temperature}\n- Max tokens: ${body.max_tokens}\n`;
-    }
-    
     return {
-      content: content + debugInfo,
+      content,
       thinking: thinking || undefined,
       inputTokens: data.usage?.input_tokens,
       outputTokens: data.usage?.output_tokens,
+      debugLog: options.debug ? debugLog : undefined,
     };
   }
   
