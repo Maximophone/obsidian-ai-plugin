@@ -141,7 +141,9 @@ Requires OAuth credentials. See [Gmail Setup](#gmail-setup) below.
    - Grant permissions to your app
    - `token.pickle` will be saved for future use
 
-### Discord Toolset (`discord`) - Coming Soon
+### Discord Toolset (`discord`)
+
+Requires a Discord bot token. See [Discord Setup](#discord-setup) below.
 
 | Tool | Safe | Description |
 |------|------|-------------|
@@ -149,6 +151,39 @@ Requires OAuth credentials. See [Gmail Setup](#gmail-setup) below.
 | `read_discord_messages` | ✅ | Read channel messages |
 | `send_discord_dm` | ❌ | Send a direct message |
 | `read_discord_dm_history` | ✅ | Read DM history |
+| `send_discord_message` | ❌ | Send message to channel |
+| `get_discord_user` | ✅ | Get user information |
+
+#### Discord Setup
+
+1. **Create Discord Application**
+   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
+   - Click "New Application" and name it
+
+2. **Create Bot**
+   - Go to "Bot" section in your application
+   - Click "Add Bot"
+   - Under "Privileged Gateway Intents", enable:
+     - Message Content Intent
+     - Server Members Intent
+
+3. **Get Bot Token**
+   - In the Bot section, click "Reset Token" to get your token
+   - Copy the token (you can only see it once!)
+
+4. **Invite Bot to Server**
+   - Go to "OAuth2" → "URL Generator"
+   - Select scopes: `bot`
+   - Select permissions: `Read Messages/View Channels`, `Send Messages`, `Read Message History`
+   - Copy the generated URL and open it in browser
+   - Select your server and authorize
+
+5. **Configure MCP Server**
+   ```bash
+   # Add to .env
+   DISCORD_BOT_TOKEN=your-bot-token-here
+   MCP_ENABLED_TOOLSETS=system,discord
+   ```
 
 ## Security
 
@@ -214,7 +249,8 @@ mcp_server/
 │   └── discord.py      # Discord tools (coming soon)
 └── integrations/
     ├── __init__.py
-    └── gmail_client.py # Gmail API client
+    ├── gmail_client.py    # Gmail API client
+    └── discord_client.py  # Discord bot client
 ```
 
 ## Integration with Obsidian AI Plugin

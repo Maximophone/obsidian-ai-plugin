@@ -19,6 +19,6 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-api-python-client>=2.108.0
 
-# Discord integration (Phase 3)
-# discord.py>=2.3.0
+# Discord integration
+discord.py>=2.3.0
 

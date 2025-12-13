@@ -55,3 +55,10 @@ try:
 except ImportError as e:
     logger.warning(f"Gmail toolset not available: {e}")
 
+# Discord toolset (requires bot token)
+try:
+    from . import discord
+    register_toolset("discord", discord.TOOLS)
+except ImportError as e:
+    logger.warning(f"Discord toolset not available: {e}")
+
