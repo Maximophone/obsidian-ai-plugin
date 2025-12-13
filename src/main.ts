@@ -3,11 +3,13 @@ import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, Model
 import { processTags, hasTag } from './parser/tagParser';
 import { AIService } from './ai/aiService';
 import { BlockProcessor } from './processor/blockProcessor';
+import { ToolManager } from './tools';
 
 export default class ObsidianAIPlugin extends Plugin {
   settings: ObsidianAISettings;
   aiService: AIService;
   blockProcessor: BlockProcessor;
+  toolManager: ToolManager;
   
   async onload() {
     console.log('Loading Obsidian AI plugin');
@@ -17,6 +19,7 @@ export default class ObsidianAIPlugin extends Plugin {
     // Initialize services
     this.aiService = new AIService(this);
     this.blockProcessor = new BlockProcessor(this);
+    this.toolManager = new ToolManager(this.app);
     
     // Add settings tab
     this.addSettingTab(new ObsidianAISettingsTab(this.app, this));
@@ -269,29 +272,19 @@ export default class ObsidianAIPlugin extends Plugin {
    * Insert text at cursor position
    * @param editor The editor instance
    * @param text The text to insert
-   * @param cursorOffset Optional offset from start of inserted text to place cursor.
-   *                     If not provided, cursor is placed at the end of the inserted text.
+   * @param cursorOffset Optional offset from start of inserted text to place cursor
    */
   private insertAtCursor(editor: Editor, text: string, cursorOffset?: number): void {
     const cursor = editor.getCursor();
     editor.replaceRange(text, cursor);
     
-    // Calculate the end position of the inserted text
-    const lines = text.split('\n');
-    const lastLineLength = lines[lines.length - 1].length;
-    const endLine = cursor.line + lines.length - 1;
-    const endCh = lines.length === 1 ? cursor.ch + lastLineLength : lastLineLength;
-    
     if (cursorOffset !== undefined) {
-      // Place cursor at specific offset from start
+      // Calculate new cursor position
       const newPos = {
         line: cursor.line,
         ch: cursor.ch + cursorOffset
       };
       editor.setCursor(newPos);
-    } else {
-      // Place cursor at the end of the inserted text
-      editor.setCursor({ line: endLine, ch: endCh });
     }
   }
   
