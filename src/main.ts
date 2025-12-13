@@ -269,19 +269,29 @@ export default class ObsidianAIPlugin extends Plugin {
    * Insert text at cursor position
    * @param editor The editor instance
    * @param text The text to insert
-   * @param cursorOffset Optional offset from start of inserted text to place cursor
+   * @param cursorOffset Optional offset from start of inserted text to place cursor.
+   *                     If not provided, cursor is placed at the end of the inserted text.
    */
   private insertAtCursor(editor: Editor, text: string, cursorOffset?: number): void {
     const cursor = editor.getCursor();
     editor.replaceRange(text, cursor);
     
+    // Calculate the end position of the inserted text
+    const lines = text.split('\n');
+    const lastLineLength = lines[lines.length - 1].length;
+    const endLine = cursor.line + lines.length - 1;
+    const endCh = lines.length === 1 ? cursor.ch + lastLineLength : lastLineLength;
+    
     if (cursorOffset !== undefined) {
-      // Calculate new cursor position
+      // Place cursor at specific offset from start
       const newPos = {
         line: cursor.line,
         ch: cursor.ch + cursorOffset
       };
       editor.setCursor(newPos);
+    } else {
+      // Place cursor at the end of the inserted text
+      editor.setCursor({ line: endLine, ch: endCh });
     }
   }
   
