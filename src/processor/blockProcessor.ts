@@ -5,7 +5,7 @@
 
 import { TFile, Notice, Platform } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
-import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel } from '../types';
+import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig } from '../types';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -433,6 +433,7 @@ export class BlockProcessor {
         systemPrompt,
         temperature: params.temperature,
         maxTokens: params.maxTokens,
+        thinking: params.thinking,
       });
       
       // Escape any tags in the response
@@ -447,7 +448,17 @@ export class BlockProcessor {
         tokenInfo = `${BEACON.TOKENS_PREFIX}In=${response.inputTokens},Out=${response.outputTokens}|==\n`;
       }
       
-      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${escapedResponse}\n${BEACON.ME}\n`;
+      // Add thinking content if present
+      let thinkingBlock = '';
+      if (response.thinking) {
+        const escapedThinking = escapeTags(response.thinking, [
+          'ai', 'reply', 'model', 'system', 'doc', 'this', 'url', 'pdf', 'file', 
+          'prompt', 'tools', 'think', 'debug', 'temperature', 'max_tokens', 'image'
+        ]);
+        thinkingBlock = `${BEACON.THOUGHT}\n${escapedThinking}\n${BEACON.END_THOUGHT}\n`;
+      }
+      
+      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${escapedResponse}\n${BEACON.ME}\n`;
       
       // Play notification sound if enabled
       if (this.plugin.settings.playNotificationSound) {
@@ -569,8 +580,9 @@ export class BlockProcessor {
     temperature?: number;
     maxTokens?: number;
     debug?: boolean;
+    thinking?: ThinkingConfig;
   } {
-    const params: Record<string, string | number | boolean> = {};
+    const params: Record<string, unknown> = {};
     
     for (const tag of tags) {
       switch (tag.name) {
@@ -589,10 +601,28 @@ export class BlockProcessor {
         case 'debug':
           params.debug = true;
           break;
+        case 'think':
+          // <think!> or <think!16000> for custom budget
+          const thinkingConfig: ThinkingConfig = { enabled: true };
+          if (tag.value) {
+            const budget = parseInt(tag.value);
+            if (!isNaN(budget) && budget > 0) {
+              thinkingConfig.budgetTokens = budget;
+            }
+          }
+          params.thinking = thinkingConfig;
+          break;
       }
     }
     
-    return params;
+    return params as {
+      model?: string;
+      system?: string;
+      temperature?: number;
+      maxTokens?: number;
+      debug?: boolean;
+      thinking?: ThinkingConfig;
+    };
   }
   
   /**
@@ -849,8 +879,27 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<TEMPERATURE!0.7>\` - Set randomness (0.0-1.0)
 - \`<MAX_TOKENS!4000>\` - Set max response length
 - \`<SYSTEM!prompt_name>\` - Use a prompt from your vault's Prompts folder
-- \`<THINK!>\` - Enable extended thinking mode
+- \`<THINK!>\` - Enable extended thinking (Claude, o-series, Gemini)
+- \`<THINK!16000>\` - Enable thinking with custom token budget
 - \`<DEBUG!>\` - Show debug info
+
+## Thinking Mode
+
+Enable extended thinking for complex reasoning tasks:
+
+\`\`\`
+<AI!>
+<MODEL!sonnet4>
+<THINK!>
+Solve this step by step: What is 17 * 23 + 45 / 9?
+<REPLY!>
+</AI!>
+\`\`\`
+
+**Provider support:**
+- **Claude**: Full thinking visibility (shown in |THOUGHT| blocks)
+- **OpenAI o-series**: Hidden reasoning (only token count shown)
+- **Gemini thinking**: Full thinking visibility
 
 ## Content References
 

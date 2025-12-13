@@ -3,7 +3,7 @@
  */
 
 import { requestUrl, RequestUrlParam } from 'obsidian';
-import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent } from '../types';
+import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, THINKING_CAPABLE_MODELS } from '../types';
 import type ObsidianAIPlugin from '../main';
 
 export class AIService {
@@ -23,6 +23,7 @@ export class AIService {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
+      thinking?: ThinkingConfig;
     } = {}
   ): Promise<AIResponse> {
     const modelAlias = options.model || this.plugin.settings.defaultModel;
@@ -95,6 +96,7 @@ export class AIService {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
+      thinking?: ThinkingConfig;
     }
   ): Promise<AIResponse> {
     const apiKey = this.plugin.settings.anthropicApiKey;
@@ -123,8 +125,23 @@ export class AIService {
       model,
       messages: anthropicMessages,
       max_tokens: options.maxTokens || this.plugin.settings.defaultMaxTokens,
-      temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
     };
+    
+    // Handle extended thinking
+    if (options.thinking?.enabled) {
+      // Check if model supports thinking
+      const thinkingCapability = THINKING_CAPABLE_MODELS[model];
+      if (thinkingCapability === 'full') {
+        body.thinking = {
+          type: 'enabled',
+          budget_tokens: options.thinking.budgetTokens || 10000,
+        };
+        // When thinking is enabled, temperature must be 1 for Claude
+        body.temperature = 1;
+      }
+    } else {
+      body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
+    }
     
     if (systemPrompt) {
       body.system = systemPrompt;
@@ -149,16 +166,21 @@ export class AIService {
     
     const data = response.json;
     
-    // Extract text content
+    // Extract text and thinking content
     let content = '';
+    let thinking = '';
+    
     for (const block of data.content) {
       if (block.type === 'text') {
         content += block.text;
+      } else if (block.type === 'thinking') {
+        thinking += block.thinking;
       }
     }
     
     return {
       content,
+      thinking: thinking || undefined,
       inputTokens: data.usage?.input_tokens,
       outputTokens: data.usage?.output_tokens,
     };
@@ -198,6 +220,7 @@ export class AIService {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
+      thinking?: ThinkingConfig;
     }
   ): Promise<AIResponse> {
     const apiKey = this.plugin.settings.openaiApiKey;
@@ -205,16 +228,19 @@ export class AIService {
       throw new Error('OpenAI API key not configured. Please add it in settings.');
     }
     
+    // Check if this is an o-series reasoning model
+    const isReasoningModel = model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
+    
     // Convert messages to OpenAI format
     const openaiMessages = messages.map(m => ({
       role: m.role,
       content: this.convertToOpenAIContent(m.content),
     }));
     
-    // Add system prompt if provided
+    // Add system prompt if provided (use 'developer' role for o-series)
     if (options.systemPrompt) {
       openaiMessages.unshift({
-        role: 'system',
+        role: isReasoningModel ? 'developer' : 'system',
         content: options.systemPrompt,
       });
     }
@@ -222,9 +248,21 @@ export class AIService {
     const body: Record<string, unknown> = {
       model,
       messages: openaiMessages,
-      max_tokens: options.maxTokens || this.plugin.settings.defaultMaxTokens,
-      temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
     };
+    
+    if (isReasoningModel) {
+      // o-series models use different parameters
+      body.max_completion_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
+      
+      // Add reasoning effort if thinking is enabled
+      if (options.thinking?.enabled) {
+        body.reasoning_effort = 'high';
+      }
+      // Note: o-series doesn't support temperature parameter
+    } else {
+      body.max_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
+      body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
+    }
     
     const requestParams: RequestUrlParam = {
       url: 'https://api.openai.com/v1/chat/completions',
@@ -244,8 +282,13 @@ export class AIService {
     
     const data = response.json;
     
+    // For o-series, include reasoning token count in thinking info
+    const reasoningTokens = data.usage?.completion_tokens_details?.reasoning_tokens;
+    
     return {
       content: data.choices[0]?.message?.content || '',
+      thinkingTokens: reasoningTokens,
+      thinking: reasoningTokens ? `[Reasoning used ${reasoningTokens} tokens]` : undefined,
       inputTokens: data.usage?.prompt_tokens,
       outputTokens: data.usage?.completion_tokens,
     };
@@ -292,11 +335,24 @@ export class AIService {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
+      thinking?: ThinkingConfig;
     }
   ): Promise<AIResponse> {
     const apiKey = this.plugin.settings.googleApiKey;
     if (!apiKey) {
       throw new Error('Google AI API key not configured. Please add it in settings.');
+    }
+    
+    // Check if this is a thinking model
+    const isThinkingModel = model.includes('thinking');
+    
+    // If thinking is requested but not using thinking model, suggest switching
+    let actualModel = model;
+    if (options.thinking?.enabled && !isThinkingModel) {
+      // Try to use thinking variant if available
+      if (model.includes('gemini-flash') || model === 'gemini-flash') {
+        actualModel = 'gemini-2.0-flash-thinking-exp';
+      }
     }
     
     // Convert messages to Gemini format
@@ -327,12 +383,21 @@ export class AIService {
       });
     }
     
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: options.maxTokens || this.plugin.settings.defaultMaxTokens,
+      temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
+    };
+    
+    // Add thinking budget if using thinking model
+    if (actualModel.includes('thinking') && options.thinking?.budgetTokens) {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: options.thinking.budgetTokens,
+      };
+    }
+    
     const body: Record<string, unknown> = {
       contents,
-      generationConfig: {
-        maxOutputTokens: options.maxTokens || this.plugin.settings.defaultMaxTokens,
-        temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
-      },
+      generationConfig,
     };
     
     if (systemInstruction) {
@@ -340,7 +405,7 @@ export class AIService {
     }
     
     const requestParams: RequestUrlParam = {
-      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=${apiKey}`,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -356,18 +421,28 @@ export class AIService {
     
     const data = response.json;
     
-    // Extract text from response
+    // Extract text and thinking from response
     let content = '';
+    let thinking = '';
+    
     if (data.candidates?.[0]?.content?.parts) {
       for (const part of data.candidates[0].content.parts) {
-        if (part.text) {
+        if (part.thought) {
+          // Gemini thinking models return thought in a separate field
+          thinking += part.text || '';
+        } else if (part.text) {
           content += part.text;
         }
       }
     }
     
+    // For thinking models, check thinkingMetadata
+    const thinkingTokens = data.usageMetadata?.thoughtsTokenCount;
+    
     return {
       content,
+      thinking: thinking || (thinkingTokens ? `[Thinking used ${thinkingTokens} tokens]` : undefined),
+      thinkingTokens,
       inputTokens: data.usageMetadata?.promptTokenCount,
       outputTokens: data.usageMetadata?.candidatesTokenCount,
     };

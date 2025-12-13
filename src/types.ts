@@ -33,11 +33,39 @@ export interface AIMessage {
 
 export interface AIResponse {
   content: string;
-  reasoning?: string;
+  thinking?: string;          // Full thinking content (Claude, Gemini thinking models)
+  thinkingTokens?: number;    // Thinking/reasoning token count
   toolCalls?: ToolCall[];
   inputTokens?: number;
   outputTokens?: number;
 }
+
+// Thinking configuration for AI requests
+export interface ThinkingConfig {
+  enabled: boolean;
+  budgetTokens?: number;  // Optional token budget for thinking
+}
+
+// Models that support extended thinking
+export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'> = {
+  // Claude - full thinking visibility
+  'claude-sonnet-4-20250514': 'full',
+  'claude-sonnet-4-5-20250929': 'full',
+  'claude-opus-4-20250514': 'full',
+  'claude-opus-4-1-20250805': 'full',
+  'claude-opus-4-5-20251101': 'full',
+  
+  // OpenAI o-series - hidden reasoning (only token count)
+  'o1': 'hidden',
+  'o1-2024-12-17': 'hidden',
+  'o1-preview': 'hidden',
+  'o1-mini': 'hidden',
+  'o3': 'hidden',
+  'o4-mini': 'hidden',
+  
+  // Gemini thinking - full visibility
+  'gemini-flash-thinking-exp': 'full',
+};
 
 export interface ToolCall {
   id: string;
