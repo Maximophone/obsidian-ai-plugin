@@ -3,7 +3,7 @@
  * Port of process_ai_block.py
  */
 
-import { TFile, Notice, Platform } from 'obsidian';
+import { TFile, Notice, Platform, requestUrl } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
 import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig } from '../types';
 import type ObsidianAIPlugin from '../main';
@@ -33,6 +33,10 @@ interface LoadedImages {
 
 interface LoadedPDFs {
   [path: string]: { base64: string; filename: string } | { error: string };
+}
+
+interface LoadedUrls {
+  [url: string]: { content: string; title?: string } | { error: string };
 }
 
 // Supported image extensions and their MIME types
@@ -321,6 +325,99 @@ export class BlockProcessor {
   }
   
   /**
+   * Pre-load all URLs referenced by <url!> tags
+   */
+  private async preloadUrls(text: string): Promise<LoadedUrls> {
+    const urls: LoadedUrls = {};
+    const tags = extractTags(text);
+    
+    for (const tag of tags) {
+      if (tag.name === 'url' && tag.value) {
+        const url = tag.value;
+        if (urls[url]) continue; // Already loaded
+        
+        try {
+          // Validate URL
+          if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            urls[url] = { error: `Invalid URL (must start with http:// or https://): ${url}` };
+            continue;
+          }
+          
+          // Fetch the URL using Obsidian's requestUrl
+          const response = await requestUrl({
+            url,
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; ObsidianAI/1.0)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          });
+          
+          if (response.status !== 200) {
+            urls[url] = { error: `Failed to fetch URL (status ${response.status}): ${url}` };
+            continue;
+          }
+          
+          const html = response.text;
+          
+          // Extract title from HTML
+          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const title = titleMatch ? titleMatch[1].trim() : undefined;
+          
+          // Convert HTML to plain text
+          const textContent = this.htmlToText(html);
+          
+          urls[url] = { content: textContent, title };
+          
+        } catch (e) {
+          urls[url] = { error: `Error fetching URL ${url}: ${e.message}` };
+        }
+      }
+    }
+    
+    return urls;
+  }
+  
+  /**
+   * Convert HTML to plain text
+   */
+  private htmlToText(html: string): string {
+    // Remove script and style elements
+    let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '');
+    
+    // Remove HTML comments
+    text = text.replace(/<!--[\s\S]*?-->/g, '');
+    
+    // Replace common block elements with newlines
+    text = text.replace(/<\/(p|div|h[1-6]|li|tr|br|hr)[^>]*>/gi, '\n');
+    text = text.replace(/<(br|hr)[^>]*\/?>/gi, '\n');
+    
+    // Remove all remaining HTML tags
+    text = text.replace(/<[^>]+>/g, '');
+    
+    // Decode HTML entities
+    text = text.replace(/&nbsp;/gi, ' ');
+    text = text.replace(/&amp;/gi, '&');
+    text = text.replace(/&lt;/gi, '<');
+    text = text.replace(/&gt;/gi, '>');
+    text = text.replace(/&quot;/gi, '"');
+    text = text.replace(/&#39;/gi, "'");
+    text = text.replace(/&apos;/gi, "'");
+    
+    // Clean up whitespace
+    text = text.replace(/\r\n/g, '\n');
+    text = text.replace(/[ \t]+/g, ' ');
+    text = text.replace(/\n[ \t]+/g, '\n');
+    text = text.replace(/[ \t]+\n/g, '\n');
+    text = text.replace(/\n{3,}/g, '\n\n');
+    text = text.trim();
+    
+    return text;
+  }
+  
+  /**
    * Pre-load all documents referenced by <doc!> tags
    */
   private async preloadDocuments(text: string): Promise<LoadedDocuments> {
@@ -385,11 +482,12 @@ export class BlockProcessor {
     });
     
     try {
-      // Pre-load all referenced documents, files, images, and PDFs
+      // Pre-load all referenced documents, files, images, PDFs, and URLs
       const loadedDocs = await this.preloadDocuments(blockWithoutReply);
       const loadedFiles = await this.preloadFiles(blockWithoutReply);
       const loadedImages = await this.preloadImages(blockWithoutReply);
       const loadedPDFs = await this.preloadPDFs(blockWithoutReply);
+      const loadedUrls = await this.preloadUrls(blockWithoutReply);
       
       // Parse the block to extract parameters and process context tags
       const [processedText, tags, images, pdfs] = this.processContextTags(
@@ -398,7 +496,8 @@ export class BlockProcessor {
         loadedDocs, 
         loadedFiles, 
         loadedImages,
-        loadedPDFs
+        loadedPDFs,
+        loadedUrls
       );
       
       // Extract parameters from tags
@@ -500,7 +599,8 @@ export class BlockProcessor {
     loadedDocs: LoadedDocuments = {},
     loadedFiles: LoadedFiles = {},
     loadedImages: LoadedImages = {},
-    loadedPDFs: LoadedPDFs = {}
+    loadedPDFs: LoadedPDFs = {},
+    loadedUrls: LoadedUrls = {}
   ): [string, Array<{name: string; value: string | null; text: string | null}>, Array<{base64: string; mediaType: string}>, Array<{base64: string}>] {
     const collectedTags: Array<{name: string; value: string | null; text: string | null}> = [];
     const collectedImages: Array<{base64: string; mediaType: string}> = [];
@@ -522,7 +622,7 @@ export class BlockProcessor {
       this: () => `<document>\n${docContent}\n</document>\n`,
       doc: (v) => this.insertDocRef(v, loadedDocs),
       file: (v) => this.insertFileRef(v, loadedFiles),
-      url: (v) => this.insertUrlRef(v),
+      url: (v) => this.insertUrlRef(v, loadedUrls),
       prompt: (v) => this.insertPromptRef(v),
       image: (v) => this.insertImageRef(v, loadedImages, collectedImages),
       pdf: (v) => this.insertPDFRef(v, loadedPDFs, collectedPDFs),
@@ -780,9 +880,20 @@ export class BlockProcessor {
   /**
    * Insert URL reference
    */
-  private insertUrlRef(url: string | null): string {
+  private insertUrlRef(url: string | null, loadedUrls: LoadedUrls = {}): string {
     if (!url) return 'Error: No URL specified';
-    return `<url>${url}</url>\n<content>[[Content will be fetched]]</content>`;
+    
+    // Check if we have pre-loaded content
+    const loaded = loadedUrls[url];
+    if (loaded) {
+      if ('error' in loaded) {
+        return `<url>${url}</url>\n<error>${loaded.error}</error>`;
+      }
+      const title = loaded.title ? `\n<title>${loaded.title}</title>` : '';
+      return `<url>${url}</url>${title}\n<content>\n${loaded.content}\n</content>`;
+    }
+    
+    return `<url>${url}</url>\n<error>URL was not pre-loaded</error>`;
   }
   
   /**
