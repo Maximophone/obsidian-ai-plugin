@@ -5,7 +5,8 @@
 
 import { TFile, Notice, Platform, requestUrl } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
-import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig } from '../types';
+import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolCall, AIToolResult } from '../types';
+import { ToolDefinition } from '../tools';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -506,6 +507,136 @@ export class BlockProcessor {
   }
   
   /**
+   * Call AI with tool support - handles the tool execution loop
+   */
+  private async callAIWithTools(
+    messages: AIMessage[],
+    options: {
+      model?: string;
+      systemPrompt?: string;
+      temperature?: number;
+      maxTokens?: number;
+      thinking?: ThinkingConfig;
+      debug?: boolean;
+      tools?: ToolDefinition[];
+    }
+  ): Promise<{
+    content: string;
+    thinking?: string;
+    toolExecutions?: Array<{ name: string; args: Record<string, unknown>; result: string }>;
+    inputTokens?: number;
+    outputTokens?: number;
+    debugLog?: string[];
+  }> {
+    const allDebugLog: string[] = [];
+    const toolExecutions: Array<{ name: string; args: Record<string, unknown>; result: string }> = [];
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let finalContent = '';
+    let finalThinking = '';
+    
+    // Clone messages to avoid modifying original
+    const conversationMessages = [...messages];
+    
+    // Maximum tool iterations to prevent infinite loops
+    const MAX_TOOL_ITERATIONS = 10;
+    let iteration = 0;
+    
+    while (iteration < MAX_TOOL_ITERATIONS) {
+      iteration++;
+      
+      // Call AI
+      const response = await this.plugin.aiService.chat(conversationMessages, options);
+      
+      // Accumulate tokens
+      if (response.inputTokens) totalInputTokens += response.inputTokens;
+      if (response.outputTokens) totalOutputTokens += response.outputTokens;
+      if (response.debugLog) allDebugLog.push(...response.debugLog);
+      if (response.thinking) finalThinking += response.thinking;
+      
+      // If no tool calls, we're done
+      if (!response.toolCalls || response.toolCalls.length === 0) {
+        finalContent = response.content;
+        break;
+      }
+      
+      // Execute tool calls
+      allDebugLog.push(`\n**Tool Loop Iteration ${iteration}:**`);
+      
+      const toolResults: AIToolResult[] = [];
+      
+      for (const toolCall of response.toolCalls) {
+        allDebugLog.push(`  Executing: ${toolCall.name}`);
+        
+        // Check if tool requires confirmation (unsafe)
+        const requiresConfirmation = this.plugin.toolManager.toolRequiresConfirmation(toolCall.name);
+        
+        if (requiresConfirmation) {
+          // TODO: Show confirmation modal
+          // For now, skip unsafe tools
+          toolResults.push({
+            toolCallId: toolCall.id,
+            error: 'Unsafe tool execution not yet implemented. Please use safe (read-only) tools.',
+          });
+          allDebugLog.push(`    Skipped: Unsafe tool requires confirmation`);
+          continue;
+        }
+        
+        // Execute the tool
+        const result = await this.plugin.toolManager.executeTool({
+          id: toolCall.id,
+          name: toolCall.name,
+          arguments: toolCall.arguments,
+        });
+        
+        toolResults.push({
+          toolCallId: toolCall.id,
+          result: result.result,
+          error: result.error,
+        });
+        
+        toolExecutions.push({
+          name: toolCall.name,
+          args: toolCall.arguments,
+          result: result.result || result.error || 'No result',
+        });
+        
+        allDebugLog.push(`    Result: ${(result.result || result.error || '').substring(0, 100)}...`);
+      }
+      
+      // Add assistant message with tool calls to conversation
+      conversationMessages.push({
+        role: 'assistant',
+        content: response.content || '',
+        toolCalls: response.toolCalls,
+      } as AIMessage);
+      
+      // Add tool results as user message
+      conversationMessages.push({
+        role: 'user',
+        content: toolResults.map(r => ({
+          type: 'tool_result' as const,
+          toolCallId: r.toolCallId,
+          content: r.error ? `Error: ${r.error}` : r.result || '',
+        })),
+      } as any);
+    }
+    
+    if (iteration >= MAX_TOOL_ITERATIONS) {
+      allDebugLog.push(`**Warning:** Max tool iterations (${MAX_TOOL_ITERATIONS}) reached`);
+    }
+    
+    return {
+      content: finalContent,
+      thinking: finalThinking || undefined,
+      toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      debugLog: allDebugLog.length > 0 ? allDebugLog : undefined,
+    };
+  }
+  
+  /**
    * Process a single AI block
    */
   private async processAiBlock(
@@ -638,14 +769,24 @@ Step 3: Finally, I select the best solution...`;
       // Show processing notice
       new Notice('Processing AI request...', 2000);
       
-      // Call AI
-      const response = await this.plugin.aiService.chat(messages, {
+      // Get tools if specified
+      let tools: ToolDefinition[] | undefined;
+      if (params.toolsets && params.toolsets.length > 0) {
+        tools = this.plugin.toolManager.getToolDefinitions(params.toolsets);
+        if (tools.length === 0) {
+          throw new Error(`No tools found for toolsets: ${params.toolsets.join(', ')}`);
+        }
+      }
+      
+      // Call AI with tool loop
+      const response = await this.callAIWithTools(messages, {
         model: modelAlias,
         systemPrompt,
         temperature: params.temperature,
         maxTokens: params.maxTokens,
         thinking: params.thinking,
         debug: params.debug,
+        tools,
       });
       
       // Escape any tags in the response
@@ -670,13 +811,22 @@ Step 3: Finally, I select the best solution...`;
         thinkingBlock = `${BEACON.THOUGHT}\n${escapedThinking}\n${BEACON.END_THOUGHT}\n`;
       }
       
+      // Add tool executions if present
+      let toolsBlock = '';
+      if (response.toolExecutions && response.toolExecutions.length > 0) {
+        const toolsContent = response.toolExecutions.map(te => 
+          `**${te.name}**(${JSON.stringify(te.args)})\n\`\`\`\n${te.result.substring(0, 500)}${te.result.length > 500 ? '...' : ''}\n\`\`\``
+        ).join('\n\n');
+        toolsBlock = `\n---\n### Tool Executions\n${toolsContent}\n---\n`;
+      }
+      
       // Add debug log if present
       let debugBlock = '';
       if (response.debugLog && response.debugLog.length > 0) {
         debugBlock = `\n---\n### Debug Log\n${response.debugLog.join('\n')}\n---\n`;
       }
       
-      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${escapedResponse}${debugBlock}\n${BEACON.ME}\n`;
+      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${escapedResponse}${toolsBlock}${debugBlock}\n${BEACON.ME}\n`;
       
       // Play notification sound if enabled
       if (this.plugin.settings.playNotificationSound) {
@@ -1148,6 +1298,29 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<THINK!16000>\` - Enable thinking with custom token budget
 - \`<DEBUG!>\` - Show debug info
 - \`<MOCK!>\` - Echo what would be sent to AI (no API call, for debugging)
+- \`<TOOLS!obsidian>\` - Enable Obsidian vault tools
+
+## Tools
+
+Enable AI to use tools to interact with your vault:
+
+\`\`\`
+<AI!>
+<TOOLS!obsidian>
+Find all notes mentioning "project" and summarize them.
+<REPLY!>
+</AI!>
+\`\`\`
+
+**Available Obsidian tools:**
+- \`list_vault\` - List files and directories
+- \`get_note_outline\` - Get heading structure
+- \`read_note\` - Read note content with line numbers
+- \`read_note_section\` - Read specific section by heading
+- \`search_vault\` - Search filenames and content
+- \`get_note_links\` - Get outgoing wikilinks
+- \`get_backlinks\` - Get incoming links
+- \`search_in_note\` - Search within a note
 
 ## Thinking Mode
 
