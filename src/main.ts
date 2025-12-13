@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView, Editor, Platform } from 'obsidian';
 import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, ModelConfig, AIProvider, DEFAULT_MODELS } from './types';
 import { processTags, hasTag } from './parser/tagParser';
 import { AIService } from './ai/aiService';
@@ -42,6 +42,136 @@ export default class ObsidianAIPlugin extends Plugin {
           const content = editor.getValue();
           await this.processBlockAtPosition(view.file, content, cursor.line);
         }
+      },
+    });
+    
+    // ========== Beacon insertion commands ==========
+    
+    // Insert AI block
+    this.addCommand({
+      id: 'insert-ai-block',
+      name: 'Insert AI block',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<ai!>\n\n<reply!>\n</ai!>', 6);
+      },
+    });
+    
+    // Insert reply beacon
+    this.addCommand({
+      id: 'insert-reply',
+      name: 'Insert reply beacon',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<reply!>');
+      },
+    });
+    
+    // Insert model tag
+    this.addCommand({
+      id: 'insert-model',
+      name: 'Insert model tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<model!>', 7);
+      },
+    });
+    
+    // Insert system tag
+    this.addCommand({
+      id: 'insert-system',
+      name: 'Insert system prompt tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<system!>', 8);
+      },
+    });
+    
+    // Insert this tag
+    this.addCommand({
+      id: 'insert-this',
+      name: 'Insert this document tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<this!>');
+      },
+    });
+    
+    // Insert doc tag
+    this.addCommand({
+      id: 'insert-doc',
+      name: 'Insert document reference tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<doc!>', 5);
+      },
+    });
+    
+    // Insert url tag
+    this.addCommand({
+      id: 'insert-url',
+      name: 'Insert URL tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<url!>', 5);
+      },
+    });
+    
+    // Insert think tag
+    this.addCommand({
+      id: 'insert-think',
+      name: 'Insert thinking tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<think!>');
+      },
+    });
+    
+    // Insert debug tag
+    this.addCommand({
+      id: 'insert-debug',
+      name: 'Insert debug tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<debug!>');
+      },
+    });
+    
+    // Insert mock tag
+    this.addCommand({
+      id: 'insert-mock',
+      name: 'Insert mock tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<mock!>');
+      },
+    });
+    
+    // Insert help tag
+    this.addCommand({
+      id: 'insert-help',
+      name: 'Insert help tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<help!>');
+      },
+    });
+    
+    // ========== File picker commands (Desktop only) ==========
+    
+    // Insert file with picker
+    this.addCommand({
+      id: 'insert-file-picker',
+      name: 'Insert file (with file picker)',
+      editorCallback: async (editor) => {
+        await this.insertFileWithPicker(editor, 'file');
+      },
+    });
+    
+    // Insert image with picker
+    this.addCommand({
+      id: 'insert-image-picker',
+      name: 'Insert image (with file picker)',
+      editorCallback: async (editor) => {
+        await this.insertFileWithPicker(editor, 'image');
+      },
+    });
+    
+    // Insert PDF with picker
+    this.addCommand({
+      id: 'insert-pdf-picker',
+      name: 'Insert PDF (with file picker)',
+      editorCallback: async (editor) => {
+        await this.insertFileWithPicker(editor, 'pdf');
       },
     });
     
@@ -115,6 +245,86 @@ export default class ObsidianAIPlugin extends Plugin {
     }
     
     return false;
+  }
+  
+  /**
+   * Insert text at cursor position
+   * @param editor The editor instance
+   * @param text The text to insert
+   * @param cursorOffset Optional offset from start of inserted text to place cursor
+   */
+  private insertAtCursor(editor: Editor, text: string, cursorOffset?: number): void {
+    const cursor = editor.getCursor();
+    editor.replaceRange(text, cursor);
+    
+    if (cursorOffset !== undefined) {
+      // Calculate new cursor position
+      const newPos = {
+        line: cursor.line,
+        ch: cursor.ch + cursorOffset
+      };
+      editor.setCursor(newPos);
+    }
+  }
+  
+  /**
+   * Open file picker and insert file/image/pdf tag
+   */
+  private async insertFileWithPicker(editor: Editor, type: 'file' | 'image' | 'pdf'): Promise<void> {
+    if (!Platform.isDesktop) {
+      new Notice('File picker is only available on desktop');
+      return;
+    }
+    
+    try {
+      // Use Electron's dialog
+      const electron = require('electron');
+      const dialog = electron.remote?.dialog || electron.dialog;
+      
+      if (!dialog) {
+        new Notice('File picker not available');
+        return;
+      }
+      
+      // Configure file filters based on type
+      let filters: { name: string; extensions: string[] }[] = [];
+      let title = 'Select file';
+      
+      switch (type) {
+        case 'image':
+          title = 'Select image';
+          filters = [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }];
+          break;
+        case 'pdf':
+          title = 'Select PDF';
+          filters = [{ name: 'PDF', extensions: ['pdf'] }];
+          break;
+        case 'file':
+        default:
+          title = 'Select file';
+          filters = [{ name: 'All Files', extensions: ['*'] }];
+          break;
+      }
+      
+      const result = await dialog.showOpenDialog({
+        title,
+        filters,
+        properties: ['openFile']
+      });
+      
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return; // User cancelled
+      }
+      
+      const filePath = result.filePaths[0];
+      const tag = `<${type}!${filePath}>`;
+      
+      this.insertAtCursor(editor, tag);
+      
+    } catch (e) {
+      console.error('Error opening file picker:', e);
+      new Notice(`Error opening file picker: ${e.message}`);
+    }
   }
   
   /**
