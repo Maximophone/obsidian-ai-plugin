@@ -154,18 +154,36 @@ export class AIService {
       console.log('[Anthropic Debug] Request body:', JSON.stringify(body, null, 2));
     }
     
+    // Use newer API version when thinking is enabled
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    };
+    
+    // Extended thinking requires the interleaved-thinking beta header
+    if (options.thinking?.enabled && body.thinking) {
+      headers['anthropic-beta'] = 'interleaved-thinking-2025-05-14';
+    }
+    
     const requestParams: RequestUrlParam = {
       url: 'https://api.anthropic.com/v1/messages',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers,
       body: JSON.stringify(body),
     };
     
-    const response = await requestUrl(requestParams);
+    let response;
+    try {
+      response = await requestUrl(requestParams);
+    } catch (e) {
+      // requestUrl throws on non-2xx responses, extract details
+      if (options.debug) {
+        console.log('[Anthropic Debug] Request failed:', e);
+      }
+      const errorMsg = e.message || String(e);
+      throw new Error(`Anthropic API error: ${errorMsg}`);
+    }
     
     if (options.debug) {
       console.log('[Anthropic Debug] Response status:', response.status);
