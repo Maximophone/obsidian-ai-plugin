@@ -629,14 +629,20 @@ export class BlockProcessor {
         content: assistantContent,
       } as any);
       
-      // Add tool results as user message (Anthropic format uses tool_use_id)
-      conversationMessages.push({
-        role: 'user',
-        content: toolResults.map(r => ({
+      // Add tool results as user message
+      // Include both tool_use_id (for Anthropic) and name (for Gemini)
+      const toolResultContents = toolResults.map((r, i) => {
+        const toolCall = response.toolCalls![i];
+        return {
           type: 'tool_result' as const,
           tool_use_id: r.toolCallId,
+          name: toolCall?.name, // For Gemini
           content: r.error ? `Error: ${r.error}` : r.result || '',
-        })),
+        };
+      });
+      conversationMessages.push({
+        role: 'user',
+        content: toolResultContents,
       } as any);
     }
     

@@ -310,6 +310,7 @@ export class AIService {
       maxTokens?: number;
       thinking?: ThinkingConfig;
       debug?: boolean;
+      tools?: ToolDefinition[];
     }
   ): Promise<AIResponse> {
     const debugLog: string[] = [];
@@ -336,10 +337,53 @@ export class AIService {
     log(`**Is GPT-5.x:** ${isGpt5}`);
     
     // Convert messages to OpenAI format
-    const openaiMessages = messages.map(m => ({
-      role: m.role,
-      content: this.convertToOpenAIContent(m.content),
-    }));
+    const openaiMessages: any[] = [];
+    for (const m of messages) {
+      // Check if this is an assistant message with tool calls
+      if (m.role === 'assistant' && Array.isArray(m.content)) {
+        const toolUseParts = (m.content as any[]).filter(p => p.type === 'tool_use');
+        const textParts = (m.content as any[]).filter(p => p.type === 'text');
+        
+        if (toolUseParts.length > 0) {
+          // OpenAI format: tool_calls is a separate field, not in content
+          openaiMessages.push({
+            role: 'assistant',
+            content: textParts.map(p => p.text).join('') || null,
+            tool_calls: toolUseParts.map(tc => ({
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.name,
+                arguments: JSON.stringify(tc.input),
+              },
+            })),
+          });
+          continue;
+        }
+      }
+      
+      // Check if this is a tool result message
+      if (m.role === 'user' && Array.isArray(m.content)) {
+        const toolResults = (m.content as any[]).filter(p => p.type === 'tool_result');
+        if (toolResults.length > 0) {
+          // OpenAI format: each tool result is a separate message with role "tool"
+          for (const tr of toolResults) {
+            openaiMessages.push({
+              role: 'tool',
+              tool_call_id: tr.tool_use_id,
+              content: tr.content,
+            });
+          }
+          continue;
+        }
+      }
+      
+      // Regular message
+      openaiMessages.push({
+        role: m.role,
+        content: this.convertToOpenAIContent(m.content),
+      });
+    }
     
     // Add system prompt if provided (use 'developer' role for o-series)
     if (options.systemPrompt) {
@@ -372,6 +416,12 @@ export class AIService {
     } else {
       body.max_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
       body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
+    }
+    
+    // Add tools if provided
+    if (options.tools && options.tools.length > 0) {
+      body.tools = toolsToOpenAIFormat(options.tools);
+      log(`**Tools:** ${options.tools.map(t => t.name).join(', ')}`);
     }
     
     log(`**Max tokens param:** ${usesCompletionTokens ? 'max_completion_tokens' : 'max_tokens'}`);
@@ -430,10 +480,36 @@ export class AIService {
       log(`**Reasoning tokens:** ${reasoningTokens}`);
     }
     
+    // Extract tool calls from response
+    const toolCalls: AIToolCall[] = [];
+    const message = data.choices[0]?.message;
+    if (message?.tool_calls) {
+      for (const tc of message.tool_calls) {
+        toolCalls.push({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments || '{}'),
+        });
+        log(`**Tool call:** ${tc.function.name}(${tc.function.arguments})`);
+      }
+    }
+    
+    // Determine stop reason
+    let stopReason: AIResponse['stopReason'] = 'end_turn';
+    if (data.choices[0]?.finish_reason === 'tool_calls') {
+      stopReason = 'tool_use';
+    } else if (data.choices[0]?.finish_reason === 'length') {
+      stopReason = 'max_tokens';
+    } else if (data.choices[0]?.finish_reason === 'stop') {
+      stopReason = 'stop_sequence';
+    }
+    
     return {
-      content: data.choices[0]?.message?.content || '',
+      content: message?.content || '',
       thinkingTokens: reasoningTokens,
       thinking: reasoningTokens ? `[Reasoning used ${reasoningTokens} tokens]` : undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      stopReason,
       inputTokens: data.usage?.prompt_tokens,
       outputTokens: data.usage?.completion_tokens,
       debugLog: options.debug ? debugLog : undefined,
@@ -448,8 +524,8 @@ export class AIService {
       return [{ text: content }];
     }
     
-    // Multi-part content with images and PDFs
-    return content.map(part => {
+    // Multi-part content with images, PDFs, and function calls/responses
+    return (content as any[]).map(part => {
       if (part.type === 'text') {
         return { text: part.text };
       } else if (part.type === 'image') {
@@ -464,6 +540,22 @@ export class AIService {
           inline_data: {
             mime_type: 'application/pdf',
             data: part.base64Data,
+          },
+        };
+      } else if (part.type === 'tool_use') {
+        // Convert to Gemini function call format
+        return {
+          functionCall: {
+            name: part.name,
+            args: part.input,
+          },
+        };
+      } else if (part.type === 'tool_result') {
+        // Convert to Gemini function response format
+        return {
+          functionResponse: {
+            name: part.name || 'unknown',
+            response: { content: part.content },
           },
         };
       }
@@ -483,6 +575,7 @@ export class AIService {
       maxTokens?: number;
       thinking?: ThinkingConfig;
       debug?: boolean;
+      tools?: ToolDefinition[];
     }
   ): Promise<AIResponse> {
     const debugLog: string[] = [];
@@ -572,6 +665,12 @@ export class AIService {
       body.systemInstruction = systemInstruction;
     }
     
+    // Add tools if provided
+    if (options.tools && options.tools.length > 0) {
+      body.tools = toolsToGoogleFormat(options.tools);
+      log(`**Tools:** ${options.tools.map(t => t.name).join(', ')}`);
+    }
+    
     log(`\n**Request body:**\n\`\`\`json\n${JSON.stringify(body, null, 2)}\n\`\`\``);
     
     const requestParams: RequestUrlParam = {
@@ -610,9 +709,10 @@ export class AIService {
     const data = response.json;
     log(`**Response received successfully**`);
     
-    // Extract text and thinking from response
+    // Extract text, thinking, and tool calls from response
     let content = '';
     let thinking = '';
+    const toolCalls: AIToolCall[] = [];
     
     if (data.candidates?.[0]?.content?.parts) {
       for (const part of data.candidates[0].content.parts) {
@@ -621,12 +721,31 @@ export class AIService {
           thinking += part.text || '';
         } else if (part.text) {
           content += part.text;
+        } else if (part.functionCall) {
+          // Gemini function call format
+          toolCalls.push({
+            id: `gemini-${Date.now()}-${toolCalls.length}`, // Gemini doesn't provide IDs
+            name: part.functionCall.name,
+            arguments: part.functionCall.args || {},
+          });
+          log(`**Tool call:** ${part.functionCall.name}(${JSON.stringify(part.functionCall.args)})`);
         }
       }
     }
     
     // For thinking models, check thinkingMetadata
     const thinkingTokens = data.usageMetadata?.thoughtsTokenCount;
+    
+    // Determine stop reason
+    let stopReason: AIResponse['stopReason'] = 'end_turn';
+    const finishReason = data.candidates?.[0]?.finishReason;
+    if (finishReason === 'STOP') {
+      stopReason = 'end_turn';
+    } else if (finishReason === 'MAX_TOKENS') {
+      stopReason = 'max_tokens';
+    } else if (toolCalls.length > 0) {
+      stopReason = 'tool_use';
+    }
     
     log(`**Input tokens:** ${data.usageMetadata?.promptTokenCount}`);
     log(`**Output tokens:** ${data.usageMetadata?.candidatesTokenCount}`);
@@ -638,6 +757,8 @@ export class AIService {
       content,
       thinking: thinking || (thinkingTokens ? `[Thinking used ${thinkingTokens} tokens]` : undefined),
       thinkingTokens,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      stopReason,
       inputTokens: data.usageMetadata?.promptTokenCount,
       outputTokens: data.usageMetadata?.candidatesTokenCount,
       debugLog: options.debug ? debugLog : undefined,
