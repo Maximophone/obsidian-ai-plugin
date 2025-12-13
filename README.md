@@ -18,13 +18,34 @@ Add AI capabilities directly into your Obsidian notes. Write questions, referenc
 
 ### 1. Install the Plugin
 
+**Option A: Community Plugins (Coming Soon)**
+
+Once approved, search for "Inline AI" in Settings → Community Plugins → Browse.
+
+**Option B: BRAT (Beta Testing)**
+
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Community Plugins
+2. Open Settings → BRAT → "Add Beta Plugin"
+3. Enter: `Maximophone/obsidian-ai-plugin`
+4. Enable the plugin in Community Plugins
+
+**Option C: Manual Download**
+
+1. Go to the [latest release](https://github.com/Maximophone/obsidian-ai-plugin/releases/latest)
+2. Download `main.js`, `manifest.json`, and `styles.css`
+3. Create folder: `YourVault/.obsidian/plugins/inline-ai/`
+4. Move the 3 files into that folder
+5. Restart Obsidian and enable the plugin in Settings → Community Plugins
+
+**Option D: Build from Source**
+
 ```bash
 git clone https://github.com/Maximophone/obsidian-ai-plugin.git
 cd obsidian-ai-plugin
 npm install && npm run build
 ```
 
-Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/obsidian-ai/` folder.
+Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/inline-ai/` folder.
 
 ### 2. Add Your API Key
 
