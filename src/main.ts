@@ -363,14 +363,35 @@ export default class ObsidianAIPlugin extends Plugin {
   
   /**
    * Process all AI blocks in a file
+   * Uses two-phase approach:
+   * 1. Replace <reply!> with processing placeholder and save (so user sees immediate feedback)
+   * 2. Process AI and replace placeholder with response
    */
   async processFile(file: TFile): Promise<void> {
     try {
       const content = await this.app.vault.read(file);
-      const newContent = await this.blockProcessor.processContent(content, file.path);
       
-      if (newContent !== content) {
-        await this.app.vault.modify(file, newContent);
+      // Phase 1: Replace reply tags with processing placeholder
+      const { newContent: contentWithPlaceholder, hasChanges } = 
+        this.blockProcessor.replaceReplyWithPlaceholder(content);
+      
+      if (hasChanges) {
+        // Save immediately so user sees the processing indicator
+        await this.app.vault.modify(file, contentWithPlaceholder);
+        
+        // Phase 2: Process the placeholders and get AI responses
+        const finalContent = await this.blockProcessor.processPlaceholders(contentWithPlaceholder, file.path);
+        
+        if (finalContent !== contentWithPlaceholder) {
+          await this.app.vault.modify(file, finalContent);
+        }
+      } else {
+        // No reply tags found, try regular processing (for help tags etc)
+        const newContent = await this.blockProcessor.processContent(content, file.path);
+        
+        if (newContent !== content) {
+          await this.app.vault.modify(file, newContent);
+        }
       }
     } catch (error) {
       console.error('Error processing file:', error);

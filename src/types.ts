@@ -283,5 +283,6 @@ export const BEACON = {
   TOOL_START: '|TOOL|',
   TOOL_END: '|/TOOL|',
   TOKENS_PREFIX: '|==',
+  PROCESSING: '|⏳ Processing...|',
 };
 
