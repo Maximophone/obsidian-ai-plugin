@@ -108,3 +108,34 @@ details summary:hover {
   color: var(--text-on-accent) !important;
 }
 
+/* MCP Server Settings */
+.obsidian-ai-mcp-server {
+  background-color: var(--background-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.obsidian-ai-mcp-server hr {
+  margin: 8px 0 0 0;
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.obsidian-ai-mcp-server .setting-item {
+  border-top: none;
+  padding-top: 8px;
+}
+
+.mcp-status-connected {
+  color: var(--text-success) !important;
+  font-size: 0.85em;
+  margin-top: 8px;
+}
+
+.mcp-status-disconnected {
+  color: var(--text-error) !important;
+  font-size: 0.85em;
+  margin-top: 8px;
+}
+

@@ -1,5 +1,5 @@
 import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView, Editor, Platform, FuzzySuggestModal, SuggestModal } from 'obsidian';
-import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, ModelConfig, AIProvider, DEFAULT_MODELS } from './types';
+import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, ModelConfig, AIProvider, DEFAULT_MODELS, MCPServerConfig } from './types';
 import { processTags, hasTag } from './parser/tagParser';
 import { AIService } from './ai/aiService';
 import { BlockProcessor } from './processor/blockProcessor';
@@ -229,6 +229,19 @@ export default class ObsidianAIPlugin extends Plugin {
         new Notice('No active markdown file');
       }
     });
+    
+    // Initialize MCP servers
+    await this.initializeMCPServers();
+  }
+  
+  /**
+   * Initialize MCP servers from settings
+   */
+  async initializeMCPServers(): Promise<void> {
+    if (this.settings.mcpServers && this.settings.mcpServers.length > 0) {
+      console.log(`Initializing ${this.settings.mcpServers.length} MCP server(s)...`);
+      await this.toolManager.initializeMCPServers(this.settings.mcpServers);
+    }
   }
   
   async onunload() {
@@ -833,6 +846,141 @@ class ObsidianAISettingsTab extends PluginSettingTab {
           this.display(); // Refresh
         })
       );
+    }
+    
+    // ========== MCP Servers section ==========
+    containerEl.createEl('h2', { text: 'MCP Servers' });
+    
+    containerEl.createEl('p', { 
+      text: 'Connect to external MCP (Model Context Protocol) servers to add more tools. These servers run separately and provide tools like filesystem access, shell commands, etc.',
+      cls: 'setting-item-description'
+    });
+    
+    // Add new MCP server button
+    new Setting(containerEl)
+      .setName('Add MCP Server')
+      .setDesc('Add a new MCP server connection')
+      .addButton(button => button
+        .setButtonText('+ Add Server')
+        .onClick(async () => {
+          this.plugin.settings.mcpServers.push({
+            name: 'filesystem',
+            url: 'http://127.0.0.1:8765',
+            apiKey: 'dev-key-12345',
+            enabled: true,
+          });
+          await this.plugin.saveSettings();
+          this.display(); // Refresh
+        })
+      );
+    
+    // Refresh all servers button
+    if (this.plugin.settings.mcpServers.length > 0) {
+      new Setting(containerEl)
+        .setName('Refresh MCP Connections')
+        .setDesc('Reconnect to all MCP servers and refresh tool definitions')
+        .addButton(button => button
+          .setButtonText('🔄 Refresh')
+          .onClick(async () => {
+            new Notice('Refreshing MCP servers...');
+            await this.plugin.initializeMCPServers();
+            const names = this.plugin.toolManager.getMCPToolsetNames();
+            if (names.length > 0) {
+              new Notice(`Connected to MCP servers: ${names.join(', ')}`);
+            } else {
+              new Notice('No MCP servers connected');
+            }
+            this.display();
+          })
+        );
+    }
+    
+    // List existing MCP servers
+    for (let i = 0; i < this.plugin.settings.mcpServers.length; i++) {
+      const server = this.plugin.settings.mcpServers[i];
+      
+      const serverContainer = containerEl.createDiv({ cls: 'obsidian-ai-mcp-server' });
+      
+      // Server header with name and enabled toggle
+      new Setting(serverContainer)
+        .setName(server.name || 'Unnamed Server')
+        .setDesc(server.url)
+        .addToggle(toggle => toggle
+          .setValue(server.enabled)
+          .setTooltip('Enable/disable this server')
+          .onChange(async (value) => {
+            this.plugin.settings.mcpServers[i].enabled = value;
+            await this.plugin.saveSettings();
+            await this.plugin.initializeMCPServers();
+          })
+        )
+        .addButton(button => button
+          .setButtonText('Delete')
+          .setWarning()
+          .onClick(async () => {
+            this.plugin.settings.mcpServers.splice(i, 1);
+            await this.plugin.saveSettings();
+            await this.plugin.initializeMCPServers();
+            this.display(); // Refresh
+          })
+        );
+      
+      // Server name
+      new Setting(serverContainer)
+        .setName('Name')
+        .setDesc('Display name for this server (used in <tools!mcp:name>)')
+        .addText(text => text
+          .setPlaceholder('filesystem')
+          .setValue(server.name)
+          .onChange(async (value) => {
+            this.plugin.settings.mcpServers[i].name = value;
+            await this.plugin.saveSettings();
+          })
+        );
+      
+      // Server URL
+      new Setting(serverContainer)
+        .setName('URL')
+        .setDesc('Server base URL (e.g., http://127.0.0.1:8765)')
+        .addText(text => text
+          .setPlaceholder('http://127.0.0.1:8765')
+          .setValue(server.url)
+          .onChange(async (value) => {
+            this.plugin.settings.mcpServers[i].url = value;
+            await this.plugin.saveSettings();
+          })
+        );
+      
+      // API Key
+      new Setting(serverContainer)
+        .setName('API Key')
+        .setDesc('Authentication key for this server')
+        .addText(text => text
+          .setPlaceholder('api-key')
+          .setValue(server.apiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.mcpServers[i].apiKey = value;
+            await this.plugin.saveSettings();
+          })
+        );
+      
+      // Show available tools if connected
+      const toolset = this.plugin.toolManager.getToolset(`mcp:${server.name}`);
+      if (toolset && server.enabled) {
+        const toolsDesc = toolset.tools.map(t => t.definition.name).join(', ');
+        serverContainer.createEl('p', {
+          text: `✅ Connected - Tools: ${toolsDesc}`,
+          cls: 'setting-item-description mcp-status-connected'
+        });
+      } else if (server.enabled) {
+        serverContainer.createEl('p', {
+          text: '❌ Not connected - Check URL and API key',
+          cls: 'setting-item-description mcp-status-disconnected'
+        });
+      }
+      
+      // Add visual separator
+      serverContainer.createEl('hr');
     }
   }
 }

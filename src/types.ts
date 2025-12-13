@@ -121,6 +121,14 @@ export interface ModelConfig {
   displayName?: string;    // Human-readable name for settings UI
 }
 
+// MCP Server configuration
+export interface MCPServerConfig {
+  name: string;           // Display name for this server
+  url: string;            // Base URL (e.g., "http://127.0.0.1:8765")
+  apiKey: string;         // API key for authentication
+  enabled: boolean;       // Whether this server is enabled
+}
+
 // Settings
 export interface ObsidianAISettings {
   // API Keys
@@ -145,6 +153,9 @@ export interface ObsidianAISettings {
   
   // Custom models (user-defined, merged with defaults)
   customModels: ModelConfig[];
+  
+  // MCP Servers
+  mcpServers: MCPServerConfig[];
 }
 
 // Default model configurations - these ship with the plugin
@@ -225,6 +236,8 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   promptsFolder: 'Prompts',
   
   customModels: [],
+  
+  mcpServers: [],
 };
 
 /**
