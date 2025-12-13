@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView, Editor, Platform } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView, Editor, Platform, FuzzySuggestModal, SuggestModal } from 'obsidian';
 import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, ModelConfig, AIProvider, DEFAULT_MODELS } from './types';
 import { processTags, hasTag } from './parser/tagParser';
 import { AIService } from './ai/aiService';
@@ -47,12 +47,12 @@ export default class ObsidianAIPlugin extends Plugin {
     
     // ========== Beacon insertion commands ==========
     
-    // Insert AI block
+    // Insert AI block (without reply - user adds it when ready)
     this.addCommand({
       id: 'insert-ai-block',
       name: 'Insert AI block',
       editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<ai!>\n\n<reply!>\n</ai!>', 6);
+        this.insertAtCursor(editor, '<ai!>\n\n</ai!>', 6);
       },
     });
     
@@ -65,12 +65,24 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
-    // Insert model tag
+    // Insert model tag (manual)
     this.addCommand({
       id: 'insert-model',
       name: 'Insert model tag',
       editorCallback: (editor) => {
         this.insertAtCursor(editor, '<model!>', 7);
+      },
+    });
+    
+    // Insert model with selector
+    this.addCommand({
+      id: 'insert-model-picker',
+      name: 'Insert model (with selector)',
+      editorCallback: (editor) => {
+        const models = getAllModels(this.settings);
+        new ModelSuggestModal(this.app, models, (model) => {
+          this.insertAtCursor(editor, `<model!${model.alias}>`);
+        }).open();
       },
     });
     
@@ -92,12 +104,24 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
-    // Insert doc tag
+    // Insert doc tag (manual)
     this.addCommand({
       id: 'insert-doc',
       name: 'Insert document reference tag',
       editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<doc!>', 5);
+        this.insertAtCursor(editor, '<doc!"...">', 6);
+      },
+    });
+    
+    // Insert doc with note selector
+    this.addCommand({
+      id: 'insert-doc-picker',
+      name: 'Insert document reference (with note selector)',
+      editorCallback: (editor) => {
+        new NoteSuggestModal(this.app, (file) => {
+          // Use wiki-link style for vault notes
+          this.insertAtCursor(editor, `<doc![[${file.basename}]]>`);
+        }).open();
       },
     });
     
@@ -106,7 +130,7 @@ export default class ObsidianAIPlugin extends Plugin {
       id: 'insert-url',
       name: 'Insert URL tag',
       editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<url!>', 5);
+        this.insertAtCursor(editor, '<url!"...">', 6);
       },
     });
     
@@ -143,6 +167,35 @@ export default class ObsidianAIPlugin extends Plugin {
       name: 'Insert help tag',
       editorCallback: (editor) => {
         this.insertAtCursor(editor, '<help!>');
+      },
+    });
+    
+    // ========== File/Image/PDF tags (manual entry) ==========
+    
+    // Insert file tag (manual)
+    this.addCommand({
+      id: 'insert-file',
+      name: 'Insert file tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<file!"...">', 7);
+      },
+    });
+    
+    // Insert image tag (manual)
+    this.addCommand({
+      id: 'insert-image',
+      name: 'Insert image tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<image!"...">', 8);
+      },
+    });
+    
+    // Insert PDF tag (manual)
+    this.addCommand({
+      id: 'insert-pdf',
+      name: 'Insert PDF tag',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<pdf!"...">', 6);
       },
     });
     
@@ -317,7 +370,7 @@ export default class ObsidianAIPlugin extends Plugin {
       }
       
       const filePath = result.filePaths[0];
-      const tag = `<${type}!${filePath}>`;
+      const tag = `<${type}!"${filePath}">`;
       
       this.insertAtCursor(editor, tag);
       
@@ -395,6 +448,60 @@ export default class ObsidianAIPlugin extends Plugin {
     // Fall back to default model
     const defaultConfig = resolveModel(this.settings.defaultModel, this.settings);
     return defaultConfig?.modelId || 'claude-sonnet-4-20250514';
+  }
+}
+
+/**
+ * Model selector modal
+ */
+class ModelSuggestModal extends FuzzySuggestModal<ModelConfig> {
+  private models: ModelConfig[];
+  private onSelect: (model: ModelConfig) => void;
+  
+  constructor(app: App, models: ModelConfig[], onSelect: (model: ModelConfig) => void) {
+    super(app);
+    this.models = models;
+    this.onSelect = onSelect;
+    this.setPlaceholder('Select a model...');
+  }
+  
+  getItems(): ModelConfig[] {
+    return this.models;
+  }
+  
+  getItemText(model: ModelConfig): string {
+    return `${model.alias} - ${model.displayName} (${model.provider})`;
+  }
+  
+  onChooseItem(model: ModelConfig): void {
+    this.onSelect(model);
+  }
+}
+
+/**
+ * Note selector modal with fuzzy search
+ */
+class NoteSuggestModal extends FuzzySuggestModal<TFile> {
+  private files: TFile[];
+  private onSelect: (file: TFile) => void;
+  
+  constructor(app: App, onSelect: (file: TFile) => void) {
+    super(app);
+    this.files = app.vault.getMarkdownFiles();
+    this.onSelect = onSelect;
+    this.setPlaceholder('Search for a note...');
+  }
+  
+  getItems(): TFile[] {
+    return this.files;
+  }
+  
+  getItemText(file: TFile): string {
+    return file.path;
+  }
+  
+  onChooseItem(file: TFile): void {
+    this.onSelect(file);
   }
 }
 
