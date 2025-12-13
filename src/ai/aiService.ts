@@ -84,9 +84,16 @@ export class AIService {
             data: part.base64Data,
           },
         };
-      } else if (part.type === 'tool_use' || part.type === 'tool_result') {
-        // Pass through tool-related blocks unchanged
+      } else if (part.type === 'tool_use') {
+        // Pass through tool_use blocks unchanged
         return part;
+      } else if (part.type === 'tool_result') {
+        // Anthropic tool_result format: only type, tool_use_id, content (no 'name' field)
+        return {
+          type: 'tool_result',
+          tool_use_id: part.tool_use_id,
+          content: part.content,
+        };
       }
       // Pass through any other format unchanged
       return part;

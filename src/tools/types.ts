@@ -52,10 +52,12 @@ export interface Toolset {
 
 // Convert tool definitions to format expected by AI APIs
 export function toolsToAnthropicFormat(tools: ToolDefinition[]): unknown[] {
-  return tools.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: {
+  return tools.map(tool => {
+    const requiredParams = Object.entries(tool.parameters)
+      .filter(([_, param]) => param.required)
+      .map(([name, _]) => name);
+    
+    const inputSchema: Record<string, unknown> = {
       type: 'object',
       properties: Object.fromEntries(
         Object.entries(tool.parameters).map(([name, param]) => [
@@ -67,37 +69,55 @@ export function toolsToAnthropicFormat(tools: ToolDefinition[]): unknown[] {
           }
         ])
       ),
-      required: Object.entries(tool.parameters)
-        .filter(([_, param]) => param.required)
-        .map(([name, _]) => name),
-    },
-  }));
+    };
+    
+    // Only include required if there are required params
+    if (requiredParams.length > 0) {
+      inputSchema.required = requiredParams;
+    }
+    
+    return {
+      name: tool.name,
+      description: tool.description,
+      input_schema: inputSchema,
+    };
+  });
 }
 
 export function toolsToOpenAIFormat(tools: ToolDefinition[]): unknown[] {
-  return tools.map(tool => ({
-    type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: 'object',
-        properties: Object.fromEntries(
-          Object.entries(tool.parameters).map(([name, param]) => [
-            name,
-            {
-              type: param.type,
-              description: param.description,
-              ...(param.enum ? { enum: param.enum } : {}),
-            }
-          ])
-        ),
-        required: Object.entries(tool.parameters)
-          .filter(([_, param]) => param.required)
-          .map(([name, _]) => name),
+  return tools.map(tool => {
+    const requiredParams = Object.entries(tool.parameters)
+      .filter(([_, param]) => param.required)
+      .map(([name, _]) => name);
+    
+    const parameters: Record<string, unknown> = {
+      type: 'object',
+      properties: Object.fromEntries(
+        Object.entries(tool.parameters).map(([name, param]) => [
+          name,
+          {
+            type: param.type,
+            description: param.description,
+            ...(param.enum ? { enum: param.enum } : {}),
+          }
+        ])
+      ),
+    };
+    
+    // Only include required if there are required params
+    if (requiredParams.length > 0) {
+      parameters.required = requiredParams;
+    }
+    
+    return {
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters,
       },
-    },
-  }));
+    };
+  });
 }
 
 export function toolsToGoogleFormat(tools: ToolDefinition[]): unknown[] {
