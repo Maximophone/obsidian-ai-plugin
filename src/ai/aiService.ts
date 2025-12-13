@@ -551,7 +551,8 @@ export class AIService {
         };
       } else if (part.type === 'tool_use') {
         // Convert to Gemini function call format
-        const functionCallPart: Record<string, unknown> = {
+        // thought_signature must be at the PART level (sibling to functionCall), not inside it
+        const geminiPart: Record<string, unknown> = {
           functionCall: {
             name: part.name,
             args: part.input,
@@ -559,27 +560,33 @@ export class AIService {
         };
         
         // Include thought_signature if present (required for Gemini 3 models)
-        if (part.thought_signature) {
-          functionCallPart.thought_signature = part.thought_signature;
+        // Check both snake_case and camelCase - place at PART level
+        const thoughtSig = part.thought_signature || part.thoughtSignature;
+        if (thoughtSig) {
+          geminiPart.thought_signature = thoughtSig;
         }
         
-        return functionCallPart;
+        return geminiPart;
       } else if (part.type === 'tool_result') {
         // Convert to Gemini function response format
-        // Gemini expects the response to be a simple object with the output
-        const functionResponse: Record<string, unknown> = {
-          name: part.name || 'unknown',
-          response: {
-            output: part.content,
+        // thought_signature must be at the PART level (sibling to functionResponse), not inside it
+        const geminiPart: Record<string, unknown> = {
+          functionResponse: {
+            name: part.name || 'unknown',
+            response: {
+              output: part.content,
+            },
           },
         };
         
         // Include thought_signature if present (required for Gemini 3 models)
-        if (part.thought_signature) {
-          functionResponse.thought_signature = part.thought_signature;
+        // Check both snake_case and camelCase - place at PART level
+        const thoughtSig = part.thought_signature || part.thoughtSignature;
+        if (thoughtSig) {
+          geminiPart.thought_signature = thoughtSig;
         }
         
-        return { functionResponse };
+        return geminiPart;
       }
       return part;
     });
@@ -774,10 +781,22 @@ export class AIService {
             arguments: part.functionCall.args || {},
           };
           
+          // Log raw functionCall for debugging - stringify entire part to see all fields
+          log(`**Raw functionCall part (keys: ${Object.keys(part).join(', ')}):** ${JSON.stringify(part)}`);
+          log(`**functionCall object keys:** ${Object.keys(part.functionCall).join(', ')}`);
+          
           // Capture thought_signature if present (required for Gemini 3 models)
-          if (part.thought_signature) {
-            toolCall.thoughtSignature = part.thought_signature;
-            log(`**Thought signature:** present`);
+          // Check both inside functionCall and at part level, and both snake_case and camelCase
+          const thoughtSig = part.functionCall.thought_signature 
+            || part.functionCall.thoughtSignature 
+            || (part as any).thought_signature 
+            || (part as any).thoughtSignature;
+          
+          if (thoughtSig) {
+            toolCall.thoughtSignature = thoughtSig;
+            log(`**Thought signature:** present (value: ${String(thoughtSig).substring(0, 50)}...)`);
+          } else {
+            log(`**Thought signature:** NOT FOUND - checked functionCall.thought_signature, functionCall.thoughtSignature, part.thought_signature, part.thoughtSignature`);
           }
           
           toolCalls.push(toolCall);
