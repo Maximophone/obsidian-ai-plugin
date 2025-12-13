@@ -42,6 +42,9 @@ class Config:
     # Discord
     DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
     
+    # Notion
+    NOTION_API_KEY: Optional[str] = os.getenv("NOTION_API_KEY")
+    
     @classmethod
     def validate_path(cls, path: str) -> Path:
         """

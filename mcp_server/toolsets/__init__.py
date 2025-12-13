@@ -62,3 +62,10 @@ try:
 except ImportError as e:
     logger.warning(f"Discord toolset not available: {e}")
 
+# Notion toolset (requires API key)
+try:
+    from . import notion
+    register_toolset("notion", notion.TOOLS)
+except ImportError as e:
+    logger.warning(f"Notion toolset not available: {e}")
+

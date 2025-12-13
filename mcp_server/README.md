@@ -5,7 +5,7 @@ A FastAPI-based Model Context Protocol (MCP) server that provides tools for the 
 ## Features
 
 - **Virtual MCP Servers**: Single process, multiple toolsets at different URL paths
-- **Modular Toolsets**: System, Gmail, Discord (each accessible independently)
+- **Modular Toolsets**: System, Gmail, Discord, Notion (each accessible independently)
 - **Security**: API key authentication + path sandboxing
 - **FastAPI**: Modern async Python framework with auto-generated docs
 
@@ -40,6 +40,7 @@ The server starts and exposes each toolset as a virtual MCP server:
 http://127.0.0.1:8765/mcp/system   → Filesystem/shell tools
 http://127.0.0.1:8765/mcp/gmail    → Email tools
 http://127.0.0.1:8765/mcp/discord  → Discord tools
+http://127.0.0.1:8765/mcp/notion   → Notion database tools
 ```
 
 API Docs: http://127.0.0.1:8765/docs
@@ -53,6 +54,7 @@ In Obsidian Settings → Obsidian AI → MCP Servers, add **separate entries** f
 | `system` | `http://127.0.0.1:8765/mcp/system` |
 | `gmail` | `http://127.0.0.1:8765/mcp/gmail` |
 | `discord` | `http://127.0.0.1:8765/mcp/discord` |
+| `notion` | `http://127.0.0.1:8765/mcp/notion` |
 
 Now you can use them independently:
 
@@ -236,6 +238,65 @@ Requires a Discord bot token. See [Discord Setup](#discord-setup) below.
    MCP_ENABLED_TOOLSETS=system,discord
    ```
 
+### Notion Toolset (`notion`)
+
+Tools for interacting with Notion databases - read schemas, query rows, create/update entries.
+
+| Tool | Safe | Description |
+|------|------|-------------|
+| `list_databases` | ✅ | List all databases shared with integration |
+| `get_database_schema` | ✅ | Get database structure and properties |
+| `query_database` | ✅ | Query rows from a database |
+| `query_database_filtered` | ✅ | Query with Notion filter syntax |
+| `get_database_row` | ✅ | Get a specific row by ID |
+| `create_database_row` | ❌ | Create a new row in database |
+| `update_database_row` | ❌ | Update row properties |
+| `archive_database_row` | ❌ | Archive (soft-delete) a row |
+| `unarchive_database_row` | ❌ | Restore an archived row |
+| `search_notion` | ✅ | Search databases and pages |
+
+#### Notion Setup
+
+1. **Create a Notion Integration**
+   - Go to [My Integrations](https://www.notion.so/my-integrations)
+   - Click "New integration"
+   - Name it (e.g., "MCP Server")
+   - Select the workspace to connect
+   - Click "Submit"
+
+2. **Get the Integration Token**
+   - On the integration page, find "Internal Integration Token"
+   - Click "Show" and copy the token (starts with `secret_`)
+
+3. **Share Databases with the Integration**
+   - Open each Notion database you want to access
+   - Click "..." → "Add connections"
+   - Select your integration
+   - This grants the integration access to that database
+
+4. **Configure MCP Server**
+   ```bash
+   # Add to .env
+   NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxx
+   MCP_ENABLED_TOOLSETS=system,notion
+   ```
+
+5. **Using the Tools**
+   ```markdown
+   <ai!>
+   <tools!mcp:notion>
+   List all my Notion databases
+   <reply!>
+   </ai!>
+   ```
+
+   The AI can now:
+   - List and discover your databases
+   - Read the schema (property types, options)
+   - Query rows with filters
+   - Create and update entries
+   - Archive/restore rows
+
 ## Security
 
 1. **API Key Authentication**: All requests must include valid API key
@@ -297,11 +358,13 @@ mcp_server/
 │   ├── base.py         # @tool decorator
 │   ├── system.py       # Filesystem/shell tools
 │   ├── gmail.py        # Gmail tools
-│   └── discord.py      # Discord tools (coming soon)
+│   ├── discord.py      # Discord tools
+│   └── notion.py       # Notion database tools
 └── integrations/
     ├── __init__.py
     ├── gmail_client.py    # Gmail API client
-    └── discord_client.py  # Discord bot client
+    ├── discord_client.py  # Discord bot client
+    └── notion_client.py   # Notion API client
 ```
 
 ## Integration with Obsidian AI Plugin
