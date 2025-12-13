@@ -712,24 +712,34 @@ export class AIService {
       response = await requestUrl({
         ...requestParams,
         url: `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=${apiKey}`,
+        throw: false, // Don't throw on non-2xx, let us handle it and capture the response body
       });
     } catch (e: any) {
-      // Try to extract response body from error if available
-      const errorBody = e.response?.text || e.text || '';
-      log(`\n**Request failed:** ${e.message || String(e)}`);
-      if (errorBody) {
-        log(`**Error response body:**\n\`\`\`\n${errorBody}\n\`\`\``);
-      }
-      const error = new Error(`Google AI API error: ${e.message || String(e)}${errorBody ? '\n' + errorBody : ''}`);
+      // Network error or other issue
+      log(`\n**Request failed (network error):** ${e.message || String(e)}`);
+      const error = new Error(`Google AI API error: ${e.message || String(e)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
     
     log(`\n**Response status:** ${response.status}`);
+    log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
     
     if (response.status !== 200) {
-      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
-      const error = new Error(`Google AI API error: ${response.status} - ${response.text}`);
+      // Parse error details from Google's error response
+      let errorDetails = response.text;
+      try {
+        const errorJson = JSON.parse(response.text);
+        if (errorJson.error?.message) {
+          errorDetails = `${errorJson.error.message}`;
+          if (errorJson.error.details) {
+            errorDetails += `\nDetails: ${JSON.stringify(errorJson.error.details, null, 2)}`;
+          }
+        }
+      } catch {
+        // Keep raw text if not JSON
+      }
+      const error = new Error(`Google AI API error: ${response.status} - ${errorDetails}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
