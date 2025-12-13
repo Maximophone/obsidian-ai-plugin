@@ -357,18 +357,22 @@ export class AIService {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
+        throw: false, // Don't throw on non-2xx, let us handle it
       });
-    } catch (e) {
+    } catch (e: any) {
+      // Try to extract response body from error
+      const responseText = e.response?.text || e.body || e.message || String(e);
       log(`\n**Request failed:** ${e.message || String(e)}`);
-      const error = new Error(`OpenAI API error: ${e.message || String(e)}`);
+      log(`**Error details:**\n\`\`\`\n${responseText}\n\`\`\``);
+      const error = new Error(`OpenAI API error: ${responseText}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
     
     log(`\n**Response status:** ${response.status}`);
+    log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
     
     if (response.status !== 200) {
-      log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
       const error = new Error(`OpenAI API error: ${response.status} - ${response.text}`);
       (error as any).debugLog = debugLog;
       throw error;
