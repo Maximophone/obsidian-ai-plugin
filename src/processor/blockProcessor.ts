@@ -523,13 +523,17 @@ export class BlockProcessor {
   ): Promise<{
     content: string;
     thinking?: string;
-    toolExecutions?: Array<{ name: string; args: Record<string, unknown>; result: string }>;
+    toolExecutions?: Array<{ name: string; args: Record<string, unknown>; result: string; aiMessage?: string }>;
     inputTokens?: number;
     outputTokens?: number;
     debugLog?: string[];
   }> {
-    const allDebugLog: string[] = [];
-    const toolExecutions: Array<{ name: string; args: Record<string, unknown>; result: string }> = [];
+    const debugLog: string[] = [];
+    const log = (msg: string) => {
+      if (options.debug) debugLog.push(msg);
+    };
+    
+    const toolExecutions: Array<{ name: string; args: Record<string, unknown>; result: string; aiMessage?: string }> = [];
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let finalContent = '';
@@ -551,7 +555,7 @@ export class BlockProcessor {
       // Accumulate tokens
       if (response.inputTokens) totalInputTokens += response.inputTokens;
       if (response.outputTokens) totalOutputTokens += response.outputTokens;
-      if (response.debugLog) allDebugLog.push(...response.debugLog);
+      if (response.debugLog) debugLog.push(...response.debugLog);
       if (response.thinking) finalThinking += response.thinking;
       
       // If no tool calls, we're done
@@ -561,12 +565,12 @@ export class BlockProcessor {
       }
       
       // Execute tool calls
-      allDebugLog.push(`\n**Tool Loop Iteration ${iteration}:**`);
+      log(`\n**Tool Loop Iteration ${iteration}:**`);
       
       const toolResults: AIToolResult[] = [];
       
       for (const toolCall of response.toolCalls) {
-        allDebugLog.push(`  Executing: ${toolCall.name}`);
+        log(`  Executing: ${toolCall.name}`);
         
         // Check if tool requires confirmation (unsafe)
         const requiresConfirmation = this.plugin.toolManager.toolRequiresConfirmation(toolCall.name);
@@ -578,7 +582,7 @@ export class BlockProcessor {
             toolCallId: toolCall.id,
             error: 'Unsafe tool execution not yet implemented. Please use safe (read-only) tools.',
           });
-          allDebugLog.push(`    Skipped: Unsafe tool requires confirmation`);
+          log(`    Skipped: Unsafe tool requires confirmation`);
           continue;
         }
         
@@ -595,13 +599,15 @@ export class BlockProcessor {
           error: result.error,
         });
         
+        // Record tool execution with AI's message if present
         toolExecutions.push({
           name: toolCall.name,
           args: toolCall.arguments,
           result: result.result || result.error || 'No result',
+          aiMessage: response.content || undefined,
         });
         
-        allDebugLog.push(`    Result: ${(result.result || result.error || '').substring(0, 100)}...`);
+        log(`    Result: ${(result.result || result.error || '').substring(0, 100)}...`);
       }
       
       // Add assistant message with tool calls to conversation (Anthropic format)
@@ -635,7 +641,7 @@ export class BlockProcessor {
     }
     
     if (iteration >= MAX_TOOL_ITERATIONS) {
-      allDebugLog.push(`**Warning:** Max tool iterations (${MAX_TOOL_ITERATIONS}) reached`);
+      log(`**Warning:** Max tool iterations (${MAX_TOOL_ITERATIONS}) reached`);
     }
     
     return {
@@ -644,7 +650,7 @@ export class BlockProcessor {
       toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
-      debugLog: allDebugLog.length > 0 ? allDebugLog : undefined,
+      debugLog: debugLog.length > 0 ? debugLog : undefined,
     };
   }
   
@@ -823,13 +829,21 @@ Step 3: Finally, I select the best solution...`;
         thinkingBlock = `${BEACON.THOUGHT}\n${escapedThinking}\n${BEACON.END_THOUGHT}\n`;
       }
       
-      // Add tool executions if present
+      // Add tool executions if present (before the final response)
       let toolsBlock = '';
       if (response.toolExecutions && response.toolExecutions.length > 0) {
-        const toolsContent = response.toolExecutions.map(te => 
-          `**${te.name}**(${JSON.stringify(te.args)})\n\`\`\`\n${te.result.substring(0, 500)}${te.result.length > 500 ? '...' : ''}\n\`\`\``
-        ).join('\n\n');
-        toolsBlock = `\n---\n### Tool Executions\n${toolsContent}\n---\n`;
+        const toolsContent = response.toolExecutions.map(te => {
+          let block = '';
+          // Show AI's intermediate message if present
+          if (te.aiMessage) {
+            block += `*${te.aiMessage}*\n\n`;
+          }
+          block += `🔧 **${te.name}**\n`;
+          block += `\`\`\`json\n${JSON.stringify(te.args, null, 2)}\n\`\`\`\n`;
+          block += `\`\`\`\n${te.result.substring(0, 500)}${te.result.length > 500 ? '...' : ''}\n\`\`\``;
+          return block;
+        }).join('\n\n---\n\n');
+        toolsBlock = `### Tool Executions\n\n${toolsContent}\n\n---\n\n`;
       }
       
       // Add debug log if present
@@ -838,7 +852,8 @@ Step 3: Finally, I select the best solution...`;
         debugBlock = `\n---\n### Debug Log\n${response.debugLog.join('\n')}\n---\n`;
       }
       
-      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${escapedResponse}${toolsBlock}${debugBlock}\n${BEACON.ME}\n`;
+      // Order: tokens -> thinking -> tools -> final response -> debug
+      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${toolsBlock}${escapedResponse}${debugBlock}\n${BEACON.ME}\n`;
       
       // Play notification sound if enabled
       if (this.plugin.settings.playNotificationSound) {
