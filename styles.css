@@ -49,48 +49,162 @@ details summary:hover {
 }
 
 /* Tool Confirmation Modal */
+.tool-confirmation-modal {
+  max-width: 700px;
+}
+
+.tool-confirmation-modal .modal-content {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
 .tool-confirmation-title {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   color: var(--text-warning);
+  font-size: 1.3em;
 }
 
 .tool-confirmation-name {
   margin-bottom: 8px;
-  font-family: var(--font-monospace);
+  font-size: 1.1em;
+  color: var(--text-normal);
 }
 
 .tool-confirmation-description {
   color: var(--text-muted);
   margin-bottom: 16px;
+  font-size: 0.9em;
+  line-height: 1.4;
 }
 
+.tool-confirmation-no-args {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Arguments container */
 .tool-confirmation-args {
   background-color: var(--background-secondary);
-  border-radius: 6px;
-  padding: 12px;
+  border-radius: 8px;
+  padding: 16px;
   margin-bottom: 16px;
-  max-height: 300px;
+  max-height: 400px;
   overflow-y: auto;
 }
 
-.tool-confirmation-args pre {
+/* Individual argument */
+.tool-arg {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tool-arg:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.tool-arg-label {
+  margin-bottom: 8px;
+}
+
+.tool-arg-name {
+  font-weight: 600;
+  color: var(--text-accent);
+  font-size: 0.9em;
+  text-transform: capitalize;
+}
+
+/* Path display */
+.tool-arg-path {
+  background-color: var(--background-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.tool-arg-path code {
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+  color: var(--text-normal);
+  word-break: break-all;
+}
+
+/* Boolean display */
+.tool-arg-boolean {
+  padding: 4px 0;
+}
+
+.tool-arg-boolean .bool-yes {
+  color: var(--text-success);
+  font-weight: 600;
+}
+
+.tool-arg-boolean .bool-no {
+  color: var(--text-muted);
+}
+
+/* Text display */
+.tool-arg-text {
+  padding: 8px 12px;
+  background-color: var(--background-primary);
+  border-radius: 4px;
+  color: var(--text-normal);
+}
+
+/* Code block display */
+.tool-arg-code {
+  position: relative;
+  background-color: var(--background-primary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tool-arg-code .code-language-badge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 0.7em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background-color: var(--background-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-monospace);
+}
+
+.tool-arg-code pre {
   margin: 0;
+  padding: 12px;
+  max-height: 300px;
+  overflow: auto;
 }
 
-.tool-confirmation-args code {
+.tool-arg-code code {
+  font-family: var(--font-monospace);
   font-size: 0.85em;
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text-normal);
+  display: block;
 }
 
+.tool-arg-code.multiline {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+/* Warning */
 .tool-confirmation-warning {
-  background-color: var(--background-modifier-error);
+  background-color: rgba(var(--color-red-rgb), 0.15);
+  border: 1px solid var(--background-modifier-error);
   border-radius: 6px;
   padding: 12px;
   margin-bottom: 16px;
-  color: var(--text-on-accent);
+  color: var(--text-normal);
 }
 
+/* Buttons */
 .tool-confirmation-buttons {
   display: flex;
   justify-content: flex-end;
@@ -103,9 +217,17 @@ details summary:hover {
   color: var(--text-on-accent) !important;
 }
 
+.tool-confirmation-approve:hover {
+  filter: brightness(1.1);
+}
+
 .tool-confirmation-reject {
   background-color: var(--background-modifier-error) !important;
   color: var(--text-on-accent) !important;
+}
+
+.tool-confirmation-reject:hover {
+  filter: brightness(1.1);
 }
 
 /* MCP Server Settings */
