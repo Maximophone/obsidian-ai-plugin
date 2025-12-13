@@ -11,12 +11,20 @@ export interface ImageContent {
   base64Data: string;
 }
 
+export interface PDFContent {
+  type: 'pdf';
+  base64Data: string;
+}
+
 export interface TextContent {
   type: 'text';
   text: string;
 }
 
-export type MessageContent = TextContent | ImageContent;
+export type MessageContent = TextContent | ImageContent | PDFContent;
+
+// Providers that support native PDF handling
+export const PDF_CAPABLE_PROVIDERS: AIProvider[] = ['anthropic', 'google'];
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system';

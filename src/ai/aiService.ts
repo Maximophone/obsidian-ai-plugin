@@ -58,7 +58,7 @@ export class AIService {
       return content;
     }
     
-    // Multi-part content with images
+    // Multi-part content with images and PDFs
     return content.map(part => {
       if (part.type === 'text') {
         return { type: 'text', text: part.text };
@@ -68,6 +68,15 @@ export class AIService {
           source: {
             type: 'base64',
             media_type: part.mediaType,
+            data: part.base64Data,
+          },
+        };
+      } else if (part.type === 'pdf') {
+        return {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
             data: part.base64Data,
           },
         };
@@ -250,7 +259,7 @@ export class AIService {
       return [{ text: content }];
     }
     
-    // Multi-part content with images
+    // Multi-part content with images and PDFs
     return content.map(part => {
       if (part.type === 'text') {
         return { text: part.text };
@@ -258,6 +267,13 @@ export class AIService {
         return {
           inline_data: {
             mime_type: part.mediaType,
+            data: part.base64Data,
+          },
+        };
+      } else if (part.type === 'pdf') {
+        return {
+          inline_data: {
+            mime_type: 'application/pdf',
             data: part.base64Data,
           },
         };

@@ -5,7 +5,7 @@
 
 import { TFile, Notice, Platform } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
-import { AIMessage, BEACON, ProcessingContext, MessageContent } from '../types';
+import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel } from '../types';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -29,6 +29,10 @@ interface LoadedFiles {
 
 interface LoadedImages {
   [path: string]: { base64: string; mediaType: string; filename: string } | { error: string };
+}
+
+interface LoadedPDFs {
+  [path: string]: { base64: string; filename: string } | { error: string };
 }
 
 // Supported image extensions and their MIME types
@@ -244,6 +248,79 @@ export class BlockProcessor {
   }
   
   /**
+   * Pre-load all PDFs referenced by <pdf!> tags
+   */
+  private async preloadPDFs(text: string): Promise<LoadedPDFs> {
+    const pdfs: LoadedPDFs = {};
+    const tags = extractTags(text);
+    
+    for (const tag of tags) {
+      if (tag.name === 'pdf' && tag.value) {
+        const pdfPath = tag.value;
+        if (pdfs[pdfPath]) continue; // Already loaded
+        
+        try {
+          // Check file extension
+          const ext = path.extname(pdfPath).toLowerCase();
+          if (ext !== '.pdf') {
+            pdfs[pdfPath] = { error: `Not a PDF file: ${pdfPath}` };
+            continue;
+          }
+          
+          let pdfBuffer: Buffer;
+          let filename: string;
+          
+          const isAbsolute = path.isAbsolute(pdfPath);
+          
+          if (isAbsolute) {
+            // Absolute path - use Node.js fs
+            if (!fs) {
+              pdfs[pdfPath] = { error: 'Reading PDFs outside vault requires desktop Obsidian' };
+              continue;
+            }
+            
+            if (!fs.existsSync(pdfPath)) {
+              pdfs[pdfPath] = { error: `PDF not found: ${pdfPath}` };
+              continue;
+            }
+            
+            pdfBuffer = fs.readFileSync(pdfPath);
+            filename = path.basename(pdfPath);
+          } else {
+            // Relative path - try vault first
+            const vaultPath = (this.plugin.app.vault.adapter as any).basePath;
+            const fullPath = path.join(vaultPath, pdfPath);
+            
+            // Check if file exists in vault
+            const abstractFile = this.plugin.app.vault.getAbstractFileByPath(pdfPath);
+            if (abstractFile && abstractFile instanceof TFile) {
+              // Read as binary using adapter
+              const arrayBuffer = await this.plugin.app.vault.readBinary(abstractFile);
+              pdfBuffer = Buffer.from(arrayBuffer);
+              filename = abstractFile.name;
+            } else if (fs && fs.existsSync(fullPath)) {
+              pdfBuffer = fs.readFileSync(fullPath);
+              filename = path.basename(pdfPath);
+            } else {
+              pdfs[pdfPath] = { error: `PDF not found: ${pdfPath}` };
+              continue;
+            }
+          }
+          
+          // Convert to base64
+          const base64 = pdfBuffer.toString('base64');
+          pdfs[pdfPath] = { base64, filename };
+          
+        } catch (e) {
+          pdfs[pdfPath] = { error: `Error reading PDF ${pdfPath}: ${e.message}` };
+        }
+      }
+    }
+    
+    return pdfs;
+  }
+  
+  /**
    * Pre-load all documents referenced by <doc!> tags
    */
   private async preloadDocuments(text: string): Promise<LoadedDocuments> {
@@ -308,13 +385,21 @@ export class BlockProcessor {
     });
     
     try {
-      // Pre-load all referenced documents, files, and images
+      // Pre-load all referenced documents, files, images, and PDFs
       const loadedDocs = await this.preloadDocuments(blockWithoutReply);
       const loadedFiles = await this.preloadFiles(blockWithoutReply);
       const loadedImages = await this.preloadImages(blockWithoutReply);
+      const loadedPDFs = await this.preloadPDFs(blockWithoutReply);
       
       // Parse the block to extract parameters and process context tags
-      const [processedText, tags, images] = this.processContextTags(blockWithoutReply.trim(), context.doc, loadedDocs, loadedFiles, loadedImages);
+      const [processedText, tags, images, pdfs] = this.processContextTags(
+        blockWithoutReply.trim(), 
+        context.doc, 
+        loadedDocs, 
+        loadedFiles, 
+        loadedImages,
+        loadedPDFs
+      );
       
       // Extract parameters from tags
       const params = this.extractParams(tags);
@@ -328,8 +413,16 @@ export class BlockProcessor {
         systemPrompt = await this.loadSystemPrompt(params.system);
       }
       
-      // Build conversation from block text, including images
-      const messages = this.parseConversation(processedText, images);
+      // Check if PDFs are used with unsupported model
+      if (pdfs.length > 0) {
+        const modelConfig = resolveModel(modelAlias, this.plugin.settings);
+        if (modelConfig && !PDF_CAPABLE_PROVIDERS.includes(modelConfig.provider)) {
+          throw new Error(`PDF files are only supported with Claude (Anthropic) and Gemini (Google) models. Current model "${modelAlias}" uses provider "${modelConfig.provider}".`);
+        }
+      }
+      
+      // Build conversation from block text, including images and PDFs
+      const messages = this.parseConversation(processedText, images, pdfs);
       
       // Show processing notice
       new Notice('Processing AI request...', 2000);
@@ -372,18 +465,20 @@ export class BlockProcessor {
   }
   
   /**
-   * Process context tags (this!, doc!, url!, image!, etc.)
-   * Returns [processed text, collected tags, collected images]
+   * Process context tags (this!, doc!, url!, image!, pdf!, etc.)
+   * Returns [processed text, collected tags, collected images, collected PDFs]
    */
   private processContextTags(
     text: string, 
     docContent: string, 
     loadedDocs: LoadedDocuments = {},
     loadedFiles: LoadedFiles = {},
-    loadedImages: LoadedImages = {}
-  ): [string, Array<{name: string; value: string | null; text: string | null}>, Array<{base64: string; mediaType: string}>] {
+    loadedImages: LoadedImages = {},
+    loadedPDFs: LoadedPDFs = {}
+  ): [string, Array<{name: string; value: string | null; text: string | null}>, Array<{base64: string; mediaType: string}>, Array<{base64: string}>] {
     const collectedTags: Array<{name: string; value: string | null; text: string | null}> = [];
     const collectedImages: Array<{base64: string; mediaType: string}> = [];
+    const collectedPDFs: Array<{base64: string}> = [];
     
     const replacements: Replacements = {
       // Remove parameter tags (we'll extract them separately)
@@ -404,6 +499,7 @@ export class BlockProcessor {
       url: (v) => this.insertUrlRef(v),
       prompt: (v) => this.insertPromptRef(v),
       image: (v) => this.insertImageRef(v, loadedImages, collectedImages),
+      pdf: (v) => this.insertPDFRef(v, loadedPDFs, collectedPDFs),
     };
     
     const [processed, parsedTags] = processTags(text, replacements);
@@ -415,7 +511,30 @@ export class BlockProcessor {
       }
     }
     
-    return [processed, collectedTags, collectedImages];
+    return [processed, collectedTags, collectedImages, collectedPDFs];
+  }
+  
+  /**
+   * Insert PDF reference and collect PDF data
+   */
+  private insertPDFRef(
+    pdfPath: string | null, 
+    loadedPDFs: LoadedPDFs,
+    collectedPDFs: Array<{base64: string}>
+  ): string {
+    if (!pdfPath) return 'Error: No PDF path specified';
+    
+    const loaded = loadedPDFs[pdfPath];
+    if (loaded) {
+      if ('error' in loaded) {
+        return `Error: ${loaded.error}`;
+      }
+      // Add to collected PDFs for later use in API call
+      collectedPDFs.push({ base64: loaded.base64 });
+      return `[PDF: ${loaded.filename}]\n`;
+    }
+    
+    return `Error: PDF ${pdfPath} was not pre-loaded`;
   }
   
   /**
@@ -477,13 +596,15 @@ export class BlockProcessor {
   }
   
   /**
-   * Parse conversation text into messages, optionally including images
+   * Parse conversation text into messages, optionally including images and PDFs
    */
   private parseConversation(
     text: string, 
-    images: Array<{base64: string; mediaType: string}> = []
+    images: Array<{base64: string; mediaType: string}> = [],
+    pdfs: Array<{base64: string}> = []
   ): AIMessage[] {
     const messages: AIMessage[] = [];
+    const hasMedia = images.length > 0 || pdfs.length > 0;
     
     // Split by AI and ME beacons
     const parts = text.split(new RegExp(`(${escapeRegex(BEACON.AI)}|${escapeRegex(BEACON.ME)})`));
@@ -492,24 +613,43 @@ export class BlockProcessor {
     let currentContent = '';
     let isFirstUserMessage = true;
     
+    // Helper to build content with media
+    const buildContentWithMedia = (textContent: string): string | MessageContent[] => {
+      if (!isFirstUserMessage || !hasMedia) {
+        return textContent;
+      }
+      
+      const content: MessageContent[] = [
+        { type: 'text', text: textContent }
+      ];
+      
+      // Add images
+      for (const img of images) {
+        content.push({
+          type: 'image',
+          mediaType: img.mediaType,
+          base64Data: img.base64,
+        });
+      }
+      
+      // Add PDFs
+      for (const pdf of pdfs) {
+        content.push({
+          type: 'pdf',
+          base64Data: pdf.base64,
+        });
+      }
+      
+      isFirstUserMessage = false;
+      return content;
+    };
+    
     for (const part of parts) {
       if (part === BEACON.AI) {
         // Save current content and switch to assistant
         if (currentContent.trim()) {
-          // Add images to the first user message
-          if (currentRole === 'user' && isFirstUserMessage && images.length > 0) {
-            const content: MessageContent[] = [
-              { type: 'text', text: currentContent.trim() }
-            ];
-            for (const img of images) {
-              content.push({
-                type: 'image',
-                mediaType: img.mediaType,
-                base64Data: img.base64,
-              });
-            }
-            messages.push({ role: currentRole, content });
-            isFirstUserMessage = false;
+          if (currentRole === 'user') {
+            messages.push({ role: currentRole, content: buildContentWithMedia(currentContent.trim()) });
           } else {
             messages.push({ role: currentRole, content: currentContent.trim() });
           }
@@ -530,19 +670,8 @@ export class BlockProcessor {
     
     // Add final content
     if (currentContent.trim()) {
-      // Add images to the first user message if not added yet
-      if (currentRole === 'user' && isFirstUserMessage && images.length > 0) {
-        const content: MessageContent[] = [
-          { type: 'text', text: currentContent.trim() }
-        ];
-        for (const img of images) {
-          content.push({
-            type: 'image',
-            mediaType: img.mediaType,
-            base64Data: img.base64,
-          });
-        }
-        messages.push({ role: currentRole, content });
+      if (currentRole === 'user') {
+        messages.push({ role: currentRole, content: buildContentWithMedia(currentContent.trim()) });
       } else {
         messages.push({ role: currentRole, content: currentContent.trim() });
       }
@@ -550,21 +679,7 @@ export class BlockProcessor {
     
     // Ensure we have at least one user message
     if (messages.length === 0) {
-      if (images.length > 0) {
-        const content: MessageContent[] = [
-          { type: 'text', text: text.trim() }
-        ];
-        for (const img of images) {
-          content.push({
-            type: 'image',
-            mediaType: img.mediaType,
-            base64Data: img.base64,
-          });
-        }
-        messages.push({ role: 'user', content });
-      } else {
-        messages.push({ role: 'user', content: text.trim() });
-      }
+      messages.push({ role: 'user', content: buildContentWithMedia(text.trim()) });
     }
     
     return messages;
@@ -743,6 +858,7 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<DOC!path>\` or \`<DOC![[Note Name]]>\` - Include another document
 - \`<FILE!path>\` - Include any file
 - \`<IMAGE!path>\` - Include an image (png, jpg, gif, webp) for vision models
+- \`<PDF!path>\` - Include a PDF (Claude and Gemini only)
 - \`<URL!https://...>\` - Fetch and include webpage content
 
 ## Examples
