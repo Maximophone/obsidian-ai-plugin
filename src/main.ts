@@ -109,7 +109,7 @@ export default class ObsidianAIPlugin extends Plugin {
       id: 'insert-doc',
       name: 'Insert document reference tag',
       editorCallback: (editor) => {
-        this.insertAtCursor(editor, '<doc!"...">', 6);
+        this.insertAtCursor(editor, '<doc!"[[...]]">', 8);
       },
     });
     
@@ -119,8 +119,8 @@ export default class ObsidianAIPlugin extends Plugin {
       name: 'Insert document reference (with note selector)',
       editorCallback: (editor) => {
         new NoteSuggestModal(this.app, (file) => {
-          // Use wiki-link style for vault notes
-          this.insertAtCursor(editor, `<doc![[${file.basename}]]>`);
+          // Use wiki-link style for vault notes, wrapped in quotes
+          this.insertAtCursor(editor, `<doc!"[[${file.basename}]]">`);
         }).open();
       },
     });
