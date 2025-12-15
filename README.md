@@ -83,6 +83,7 @@ Commands are the fastest way to insert AI tags. Open the Command Palette (`Cmd+P
 | **Insert mock tag** | Test without API calls |
 | **Insert URL tag** | Fetch webpage content |
 | **Insert system prompt** | Set system instructions |
+| **Insert inline tag** | Include all linked notes |
 
 ---
 
@@ -138,6 +139,17 @@ What were the action items?
 <reply!>
 </ai!>
 ```
+
+**Multiple linked notes (inline mode):**
+```markdown
+<ai!>
+<inline!>
+Compare the ideas in [[Project A]] and [[Project B]].
+<reply!>
+</ai!>
+```
+
+With `<inline!>`, all `[[links]]` automatically include their content—no need for `<doc!>` tags.
 
 **Any file:**
 ```markdown
@@ -291,6 +303,7 @@ This will echo the request parameters.
 | `<think!>` | Extended thinking | `<think!50000>` |
 | `<debug!>` | Show API details | `<debug!>` |
 | `<mock!>` | Test without API | `<mock!>` |
+| `<inline!>` | Include all [[links]] | `<inline!>` |
 | `<help!>` | Show help | `<help!>` |
 | `<temperature!n>` | Set temperature | `<temperature!0.5>` |
 | `<max_tokens!n>` | Set max tokens | `<max_tokens!8000>` |
@@ -328,6 +341,7 @@ Open **Settings → Obsidian AI** to configure:
 - **Temperature** — Response randomness (0-1)
 - **Max Tokens** — Maximum response length
 - **Prompts Folder** — Where to find your prompt files
+- **Inline Linked Notes** — Automatically include `[[linked]]` note content (like having `<inline!>` always on)
 
 ---
 

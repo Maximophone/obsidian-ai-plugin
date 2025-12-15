@@ -147,6 +147,7 @@ export interface ObsidianAISettings {
   autoProcess: boolean;
   showTokenCount: boolean;
   playNotificationSound: boolean;
+  inlineWikilinks: boolean;  // Treat [[wikilinks]] as doc references (include content)
   
   // Prompts folder
   promptsFolder: string;
@@ -232,6 +233,7 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   autoProcess: true,
   showTokenCount: true,
   playNotificationSound: true,
+  inlineWikilinks: false,  // Off by default
   
   promptsFolder: 'Prompts',
   

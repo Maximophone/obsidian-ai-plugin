@@ -162,6 +162,15 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
+    // Insert inline tag (treat [[links]] as doc references)
+    this.addCommand({
+      id: 'insert-inline',
+      name: 'Insert inline tag (include linked notes)',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<inline!>');
+      },
+    });
+    
     // Insert mock tag
     this.addCommand({
       id: 'insert-mock',
@@ -732,6 +741,17 @@ class ObsidianAISettingsTab extends PluginSettingTab {
         .setValue(this.plugin.settings.playNotificationSound)
         .onChange(async (value) => {
           this.plugin.settings.playNotificationSound = value;
+          await this.plugin.saveSettings();
+        })
+      );
+    
+    new Setting(containerEl)
+      .setName('Inline linked notes')
+      .setDesc('Automatically include content of [[linked notes]] as document references. When enabled, acts as if <inline!> tag is always present.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.inlineWikilinks)
+        .onChange(async (value) => {
+          this.plugin.settings.inlineWikilinks = value;
           await this.plugin.saveSettings();
         })
       );

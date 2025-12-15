@@ -54,6 +54,30 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+/**
+ * Extract raw wikilinks from text that are NOT already inside tags
+ * Returns array of link targets (without the [[ and ]])
+ */
+function extractRawWikilinks(text: string): string[] {
+  // First, remove all tag contents to avoid matching wikilinks inside tags
+  // This regex matches <tagname!...> patterns including wikilinks inside them
+  const textWithoutTags = text.replace(/<[a-z][a-z0-9_]*!(?:"[^"]*"|[^>])*>/gi, '');
+  
+  // Now find all wikilinks in the remaining text
+  const wikilinks: string[] = [];
+  const pattern = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+  let match: RegExpExecArray | null;
+  
+  while ((match = pattern.exec(textWithoutTags)) !== null) {
+    const linkTarget = match[1].trim();
+    if (linkTarget && !wikilinks.includes(linkTarget)) {
+      wikilinks.push(linkTarget);
+    }
+  }
+  
+  return wikilinks;
+}
+
 export class BlockProcessor {
   private plugin: ObsidianAIPlugin;
   
@@ -557,40 +581,60 @@ export class BlockProcessor {
   /**
    * Pre-load all documents referenced by <doc!> tags
    */
-  private async preloadDocuments(text: string): Promise<LoadedDocuments> {
+  private async preloadDocuments(text: string, inlineMode: boolean = false): Promise<LoadedDocuments> {
     const docs: LoadedDocuments = {};
     const tags = extractTags(text);
     
+    // Collect all paths to load
+    const pathsToLoad: string[] = [];
+    
+    // Add paths from <doc!> tags
     for (const tag of tags) {
       if (tag.name === 'doc' && tag.value) {
-        const path = tag.value;
-        if (docs[path]) continue; // Already loaded
-        
-        // Handle wikilink format [[Note Name]]
-        let notePath = path;
-        if (path.startsWith('[[') && path.endsWith(']]')) {
-          notePath = path.slice(2, -2);
+        pathsToLoad.push(tag.value);
+      }
+    }
+    
+    // Add raw wikilinks if inline mode is active
+    if (inlineMode) {
+      const wikilinks = extractRawWikilinks(text);
+      for (const link of wikilinks) {
+        // Store as [[link]] format to match how we'll look them up later
+        const key = `[[${link}]]`;
+        if (!pathsToLoad.includes(key)) {
+          pathsToLoad.push(key);
         }
-        
-        // Try to resolve the file
-        const file = this.plugin.app.metadataCache.getFirstLinkpathDest(notePath, '');
-        
-        if (!file) {
-          docs[path] = { error: `Cannot find document: ${notePath}` };
-          continue;
-        }
-        
-        if (!(file instanceof TFile)) {
-          docs[path] = { error: `Not a file: ${notePath}` };
-          continue;
-        }
-        
-        try {
-          const content = await this.plugin.app.vault.read(file);
-          docs[path] = { content, filename: file.name };
-        } catch (e) {
-          docs[path] = { error: `Error reading ${notePath}: ${e.message}` };
-        }
+      }
+    }
+    
+    // Load all documents
+    for (const path of pathsToLoad) {
+      if (docs[path]) continue; // Already loaded
+      
+      // Handle wikilink format [[Note Name]]
+      let notePath = path;
+      if (path.startsWith('[[') && path.endsWith(']]')) {
+        notePath = path.slice(2, -2);
+      }
+      
+      // Try to resolve the file
+      const file = this.plugin.app.metadataCache.getFirstLinkpathDest(notePath, '');
+      
+      if (!file) {
+        docs[path] = { error: `Cannot find document: ${notePath}` };
+        continue;
+      }
+      
+      if (!(file instanceof TFile)) {
+        docs[path] = { error: `Not a file: ${notePath}` };
+        continue;
+      }
+      
+      try {
+        const content = await this.plugin.app.vault.read(file);
+        docs[path] = { content, filename: file.name };
+      } catch (e) {
+        docs[path] = { error: `Error reading ${notePath}: ${e.message}` };
       }
     }
     
@@ -833,8 +877,13 @@ export class BlockProcessor {
     filePath: string
   ): Promise<string> {
     try {
+      // Check if inline mode is enabled (via <inline!> tag or global setting)
+      const tags = extractTags(blockWithoutReply);
+      const hasInlineTag = tags.some(t => t.name === 'inline');
+      const inlineMode = hasInlineTag || this.plugin.settings.inlineWikilinks;
+      
       // Pre-load all referenced documents, files, images, PDFs, URLs, and prompts
-      const loadedDocs = await this.preloadDocuments(blockWithoutReply);
+      const loadedDocs = await this.preloadDocuments(blockWithoutReply, inlineMode);
       const loadedFiles = await this.preloadFiles(blockWithoutReply);
       const loadedImages = await this.preloadImages(blockWithoutReply);
       const loadedPDFs = await this.preloadPDFs(blockWithoutReply);
@@ -842,7 +891,7 @@ export class BlockProcessor {
       const loadedPrompts = await this.preloadPrompts(blockWithoutReply);
       
       // Parse the block to extract parameters and process context tags
-      const [processedText, tags, images, pdfs] = this.processContextTags(
+      const [processedText, extractedTags, images, pdfs] = this.processContextTags(
         blockWithoutReply.trim(), 
         context.doc, 
         loadedDocs, 
@@ -850,11 +899,12 @@ export class BlockProcessor {
         loadedImages,
         loadedPDFs,
         loadedUrls,
-        loadedPrompts
+        loadedPrompts,
+        inlineMode
       );
       
       // Extract parameters from tags
-      const params = this.extractParams(tags);
+      const params = this.extractParams(extractedTags);
       
       // Get model
       const modelAlias = params.model || this.plugin.settings.defaultModel;
@@ -1036,7 +1086,7 @@ Step 3: Finally, I select the best solution...`;
   }
   
   /**
-   * Process context tags (this!, doc!, url!, image!, pdf!, etc.)
+   * Process context tags (this!, doc!, url!, image!, pdf!, dock!, etc.)
    * Returns [processed text, collected tags, collected images, collected PDFs]
    */
   private processContextTags(
@@ -1047,7 +1097,8 @@ Step 3: Finally, I select the best solution...`;
     loadedImages: LoadedImages = {},
     loadedPDFs: LoadedPDFs = {},
     loadedUrls: LoadedUrls = {},
-    loadedPrompts: LoadedPrompts = {}
+    loadedPrompts: LoadedPrompts = {},
+    inlineMode: boolean = false
   ): [string, Array<{name: string; value: string | null; text: string | null}>, Array<{base64: string; mediaType: string}>, Array<{base64: string}>] {
     const collectedTags: Array<{name: string; value: string | null; text: string | null}> = [];
     const collectedImages: Array<{base64: string; mediaType: string}> = [];
@@ -1064,6 +1115,7 @@ Step 3: Finally, I select the best solution...`;
       max_tokens: (v) => { collectedTags.push({name: 'max_tokens', value: v, text: null}); return ''; },
       tools: (v) => { collectedTags.push({name: 'tools', value: v, text: null}); return ''; },
       think: () => { collectedTags.push({name: 'think', value: null, text: null}); return ''; },
+      inline: () => { collectedTags.push({name: 'inline', value: null, text: null}); return ''; },
       
       // Context tags
       this: () => `<document>\n${docContent}\n</document>\n`,
@@ -1075,7 +1127,7 @@ Step 3: Finally, I select the best solution...`;
       pdf: (v) => this.insertPDFRef(v, loadedPDFs, collectedPDFs),
     };
     
-    const [processed, parsedTags] = processTags(text, replacements);
+    let [processed, parsedTags] = processTags(text, replacements);
     
     // Add parsed tags to collected
     for (const tag of parsedTags) {
@@ -1084,7 +1136,37 @@ Step 3: Finally, I select the best solution...`;
       }
     }
     
+    // If inline mode is active, convert raw wikilinks to doc references
+    if (inlineMode) {
+      processed = this.convertWikilinksToDocRefs(processed, loadedDocs);
+    }
+    
     return [processed, collectedTags, collectedImages, collectedPDFs];
+  }
+  
+  /**
+   * Convert raw [[wikilinks]] to doc references using pre-loaded content
+   */
+  private convertWikilinksToDocRefs(text: string, loadedDocs: LoadedDocuments): string {
+    // Match wikilinks with optional display text: [[target]] or [[target|display]]
+    const pattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+    
+    return text.replace(pattern, (match, target, displayText) => {
+      const key = `[[${target.trim()}]]`;
+      const loaded = loadedDocs[key];
+      
+      if (loaded) {
+        if ('error' in loaded) {
+          // Keep the original link with an error note
+          return `${match} *(Error: ${loaded.error})*`;
+        }
+        // Insert the document content
+        return `<document><filename>${loaded.filename}</filename>\n<contents>\n${loaded.content}\n</contents></document>\n`;
+      }
+      
+      // Keep original if not found in loaded docs
+      return match;
+    });
   }
   
   /**
@@ -1532,6 +1614,22 @@ Solve this step by step: What is 17 * 23 + 45 / 9?
 - \`<IMAGE!path>\` - Include an image (png, jpg, gif, webp) for vision models
 - \`<PDF!path>\` - Include a PDF (Claude and Gemini only)
 - \`<URL!https://...>\` - Fetch and include webpage content
+- \`<INLINE!>\` - Treat all [[links]] as document references (include their content)
+
+### Inline Mode
+
+Use \`<INLINE!>\` to automatically include the content of all [[linked notes]] in your prompt:
+
+\`\`\`
+<AI!>
+<INLINE!>
+Compare the approaches described in [[Project A]] and [[Project B]].
+<REPLY!>
+</AI!>
+\`\`\`
+
+With \`<INLINE!>\`, you don't need to write \`<DOC![[Project A]]>\` - just use regular Obsidian links.
+You can also enable this globally in settings ("Inline linked notes").
 
 ## Examples
 
