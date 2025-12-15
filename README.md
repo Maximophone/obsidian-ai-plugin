@@ -4,6 +4,7 @@ Add AI capabilities directly into your Obsidian notes. Write questions, referenc
 
 ## ✨ Features
 
+- **Native [[Links]]** — Just use `[[Note Name]]` to include document content—no special syntax needed
 - **5 AI Providers** — Anthropic (Claude), OpenAI (GPT), Google (Gemini), DeepSeek, Perplexity
 - **50+ Built-in Models** — From GPT-4o to Claude Opus 4.5, Gemini 3.0, and more
 - **Vision Support** — Include images for visual AI models
@@ -122,6 +123,16 @@ Explain quantum computing simply.
 
 ### Include Context
 
+**Link to notes directly** (recommended):
+```markdown
+<ai!>
+Compare the ideas in [[Project A]] and [[Project B]].
+<reply!>
+</ai!>
+```
+
+Just use standard Obsidian `[[links]]`—the content is automatically included! This is the easiest way to give context to the AI.
+
 **Current document:**
 ```markdown
 <ai!>
@@ -131,27 +142,7 @@ Summarize the above content.
 </ai!>
 ```
 
-**Another note:**
-```markdown
-<ai!>
-<doc!"[[Meeting Notes]]">
-What were the action items?
-<reply!>
-</ai!>
-```
-
-**Multiple linked notes (inline mode):**
-```markdown
-<ai!>
-<inline!>
-Compare the ideas in [[Project A]] and [[Project B]].
-<reply!>
-</ai!>
-```
-
-With `<inline!>`, all `[[links]]` automatically include their content—no need for `<doc!>` tags.
-
-**Any file:**
+**Any file (outside vault):**
 ```markdown
 <ai!>
 <file!"/path/to/config.json">
@@ -293,7 +284,8 @@ This will echo the request parameters.
 | `<model!name>` | Select model | `<model!gpt4o>` |
 | `<system!"prompt">` | System instructions | `<system!"Be concise">` |
 | `<this!>` | Include current document | `<this!>` |
-| `<doc!"[[Note]]">` | Include vault note | `<doc!"[[My Note]]">` |
+| `[[Note]]` | Include vault note (auto) | `[[My Note]]` |
+| `<doc!"[[Note]]">` | Include vault note (explicit) | `<doc!"[[My Note]]">` |
 | `<file!"/path">` | Include any file | `<file!"/tmp/data.txt">` |
 | `<image!"/path">` | Include image | `<image!"/img.png">` |
 | `<pdf!"/path">` | Include PDF | `<pdf!"/doc.pdf">` |
@@ -303,7 +295,7 @@ This will echo the request parameters.
 | `<think!>` | Extended thinking | `<think!50000>` |
 | `<debug!>` | Show API details | `<debug!>` |
 | `<mock!>` | Test without API | `<mock!>` |
-| `<inline!>` | Include all [[links]] | `<inline!>` |
+| `<inline!>` | Include all [[links]] (on by default) | `<inline!>` |
 | `<help!>` | Show help | `<help!>` |
 | `<temperature!n>` | Set temperature | `<temperature!0.5>` |
 | `<max_tokens!n>` | Set max tokens | `<max_tokens!8000>` |
@@ -341,7 +333,7 @@ Open **Settings → Obsidian AI** to configure:
 - **Temperature** — Response randomness (0-1)
 - **Max Tokens** — Maximum response length
 - **Prompts Folder** — Where to find your prompt files
-- **Inline Linked Notes** — Automatically include `[[linked]]` note content (like having `<inline!>` always on)
+- **Inline Linked Notes** — Automatically include `[[linked]]` note content (enabled by default)
 
 ---
 

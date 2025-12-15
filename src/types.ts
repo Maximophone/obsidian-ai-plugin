@@ -233,7 +233,7 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   autoProcess: true,
   showTokenCount: true,
   playNotificationSound: true,
-  inlineWikilinks: false,  // Off by default
+  inlineWikilinks: true,  // On by default - [[links]] auto-include content
   
   promptsFolder: 'Prompts',
   
