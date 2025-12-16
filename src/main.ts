@@ -314,10 +314,19 @@ export default class ObsidianAIPlugin extends Plugin {
     editor.replaceRange(text, cursor);
     
     if (cursorOffset !== undefined) {
-      // Calculate new cursor position
+      // Calculate new cursor position at specific offset
       const newPos = {
         line: cursor.line,
         ch: cursor.ch + cursorOffset
+      };
+      editor.setCursor(newPos);
+    } else {
+      // Move cursor to end of inserted text
+      const lines = text.split('\n');
+      const lastLineIndex = lines.length - 1;
+      const newPos = {
+        line: cursor.line + lastLineIndex,
+        ch: lastLineIndex === 0 ? cursor.ch + text.length : lines[lastLineIndex].length
       };
       editor.setCursor(newPos);
     }
