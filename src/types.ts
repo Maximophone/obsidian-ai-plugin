@@ -149,6 +149,9 @@ export interface ObsidianAISettings {
   playNotificationSound: boolean;
   inlineWikilinks: boolean;  // Treat [[wikilinks]] as doc references (include content)
   
+  // Appearance
+  chatSkin: 'canonical' | 'modern';  // Visual style for AI conversations
+  
   // Prompts folder
   promptsFolder: string;
   
@@ -234,6 +237,8 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   showTokenCount: true,
   playNotificationSound: true,
   inlineWikilinks: true,  // On by default - [[links]] auto-include content
+  
+  chatSkin: 'modern',  // Default to modern clean format
   
   promptsFolder: 'Prompts',
   

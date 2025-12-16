@@ -8,6 +8,7 @@ import { processTags, Replacements, escapeTags, extractTags } from '../parser/ta
 import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolCall, AIToolResult } from '../types';
 import { ToolDefinition } from '../tools';
 import { showToolConfirmation, ToolConfirmationResult } from '../ui/ToolConfirmationModal';
+import { getSkin } from '../skins';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -89,8 +90,12 @@ export class BlockProcessor {
    * Process all AI blocks in content
    */
   async processContent(content: string, filePath: string): Promise<string> {
+    // Convert from current skin to canonical for processing
+    const activeSkin = getSkin(this.plugin.settings.chatSkin);
+    const canonicalContent = activeSkin.toCanonical(content);
+    
     // First pass: remove content from ai blocks to get doc context
-    const [docWithoutAi] = processTags(content, {
+    const [docWithoutAi] = processTags(canonicalContent, {
       ai: () => '',
     });
     
@@ -107,10 +112,10 @@ export class BlockProcessor {
     
     // We need to handle async processing differently
     // First, find all AI blocks that need processing
-    const [, tags] = processTags(content);
+    const [, tags] = processTags(canonicalContent);
     const aiBlocks = tags.filter(t => t.name === 'ai');
     
-    let result = content;
+    let result = canonicalContent;
     
     for (const block of aiBlocks) {
       if (block.text && this.hasReplyTag(block.text)) {
@@ -124,7 +129,8 @@ export class BlockProcessor {
       help: () => this.getHelpText(),
     });
     
-    return finalResult;
+    // Convert from canonical back to active skin for output
+    return activeSkin.fromCanonical(finalResult);
   }
   
   /**
@@ -147,15 +153,19 @@ export class BlockProcessor {
    * This is called first to show the user that processing has started
    */
   replaceReplyWithPlaceholder(content: string): { newContent: string; hasChanges: boolean } {
-    const [, tags] = processTags(content);
+    // Convert to canonical first to ensure we find reply tags consistently
+    const activeSkin = getSkin(this.plugin.settings.chatSkin);
+    const canonicalContent = activeSkin.toCanonical(content);
+    
+    const [, tags] = processTags(canonicalContent);
     const aiBlocks = tags.filter(t => t.name === 'ai');
     
-    let result = content;
+    let result = canonicalContent;
     let hasChanges = false;
     
     for (const block of aiBlocks) {
       if (block.text && this.hasReplyTag(block.text)) {
-        // Replace <reply!> with processing placeholder in this block
+        // Replace <reply!> with processing placeholder in this block (canonical format)
         const newBlockText = block.text.replace(/<reply!>/gi, BEACON.PROCESSING);
         const newBlock = `<ai!${block.value || ''}>${newBlockText}</ai!>`;
         result = result.replace(block.fullMatch, newBlock);
@@ -163,7 +173,8 @@ export class BlockProcessor {
       }
     }
     
-    return { newContent: result, hasChanges };
+    // Convert back to active skin for display
+    return { newContent: activeSkin.fromCanonical(result), hasChanges };
   }
   
   /**
@@ -171,8 +182,12 @@ export class BlockProcessor {
    * This replaces the placeholders with actual AI responses
    */
   async processPlaceholders(content: string, filePath: string): Promise<string> {
+    // Convert from current skin to canonical for processing
+    const activeSkin = getSkin(this.plugin.settings.chatSkin);
+    const canonicalContent = activeSkin.toCanonical(content);
+    
     // First pass: remove content from ai blocks to get doc context
-    const [docWithoutAi] = processTags(content, {
+    const [docWithoutAi] = processTags(canonicalContent, {
       ai: () => '',
     });
     
@@ -182,10 +197,10 @@ export class BlockProcessor {
     };
     
     // Find all AI blocks that have processing placeholders
-    const [, tags] = processTags(content);
+    const [, tags] = processTags(canonicalContent);
     const aiBlocks = tags.filter(t => t.name === 'ai');
     
-    let result = content;
+    let result = canonicalContent;
     
     for (const block of aiBlocks) {
       if (block.text && this.hasProcessingPlaceholder(block.text)) {
@@ -199,7 +214,8 @@ export class BlockProcessor {
       help: () => this.getHelpText(),
     });
     
-    return finalResult;
+    // Convert from canonical back to active skin for output
+    return activeSkin.fromCanonical(finalResult);
   }
   
   /**
@@ -1295,8 +1311,14 @@ Step 3: Finally, I select the best solution...`;
     const messages: AIMessage[] = [];
     const hasMedia = images.length > 0 || pdfs.length > 0;
     
+    // Strip token info before parsing (it's metadata, not conversation content)
+    let cleanedText = text.replace(/\|==In=\d+,Out=\d+\|==\n?/g, '');
+    
+    // Strip thinking blocks (they're internal reasoning, not conversation)
+    cleanedText = cleanedText.replace(/\|THOUGHT\|\n[\s\S]*?\n\|\/THOUGHT\|\n?/g, '');
+    
     // Split by AI and ME beacons
-    const parts = text.split(new RegExp(`(${escapeRegex(BEACON.AI)}|${escapeRegex(BEACON.ME)})`));
+    const parts = cleanedText.split(new RegExp(`(${escapeRegex(BEACON.AI)}|${escapeRegex(BEACON.ME)})`));
     
     let currentRole: 'user' | 'assistant' = 'user';
     let currentContent = '';

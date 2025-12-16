@@ -765,6 +765,22 @@ class ObsidianAISettingsTab extends PluginSettingTab {
         })
       );
     
+    // Appearance section
+    containerEl.createEl('h2', { text: 'Appearance' });
+    
+    new Setting(containerEl)
+      .setName('Chat skin')
+      .setDesc('Visual style for AI conversations. "Modern" uses clean headers with collapsible details. "Classic" uses raw beacon markers.')
+      .addDropdown(dropdown => dropdown
+        .addOption('modern', 'Modern (Clean Details)')
+        .addOption('canonical', 'Classic (Raw Beacons)')
+        .setValue(this.plugin.settings.chatSkin)
+        .onChange(async (value) => {
+          this.plugin.settings.chatSkin = value as 'canonical' | 'modern';
+          await this.plugin.saveSettings();
+        })
+      );
+    
     // Folders section
     containerEl.createEl('h2', { text: 'Folders' });
     
