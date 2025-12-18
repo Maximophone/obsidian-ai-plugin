@@ -11,6 +11,7 @@ Add AI capabilities directly into your Obsidian notes. Write questions, referenc
 - **PDF Support** — Native PDF handling with Claude and Gemini
 - **Tool Use** — AI can read and create notes in your vault
 - **Extended Thinking** — Enable reasoning modes for complex tasks
+- **Token & Cost Tracking** — See token usage and estimated costs per response
 - **Quick Commands** — Insert all tags via the Command Palette
 
 ---
@@ -334,6 +335,33 @@ Open **Settings → Obsidian AI** to configure:
 - **Max Tokens** — Maximum response length
 - **Prompts Folder** — Where to find your prompt files
 - **Inline Linked Notes** — Automatically include `[[linked]]` note content (enabled by default)
+- **Show Token Count** — Display token usage in AI responses
+
+---
+
+## 💰 Token & Cost Tracking
+
+Each AI response shows token usage and an estimated cost:
+
+```
+**🤖 Assistant** · `sonnet4` · *12.5k in* · *834 out* · *$0.06*
+```
+
+This displays:
+- **Model** — The model alias used for this response
+- **Tokens in** — Input tokens (your messages + context)
+- **Tokens out** — Output tokens (AI response)
+- **Cost** — Estimated cost in USD
+
+### Important Notes
+
+⚠️ **Rough Estimation** — The cost shown is an approximation based on published API pricing. Actual costs may vary slightly.
+
+⚠️ **Cumulative Cost** — The cost displayed represents the cumulative cost of the entire conversation up to that point, assuming you used the same model throughout. If you switch models mid-conversation, the cost estimate will not be accurate since it calculates based on the current model's pricing for all tokens.
+
+⚠️ **Not All Models** — Cost estimates are only available for models with known pricing. If a model doesn't have pricing data, no cost will be shown.
+
+To enable token counting, go to **Settings → Obsidian AI → Show Token Count**.
 
 ---
 

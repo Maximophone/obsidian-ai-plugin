@@ -9,6 +9,7 @@ import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVI
 import { ToolDefinition } from '../tools';
 import { showToolConfirmation, ToolConfirmationResult } from '../ui/ToolConfirmationModal';
 import { getSkin } from '../skins';
+import { computeRequestPrice } from '../pricing';
 import type ObsidianAIPlugin from '../main';
 import * as path from 'path';
 
@@ -1039,7 +1040,10 @@ Step 3: Finally, I select the best solution...`;
       // Build the result block
       let tokenInfo = '';
       if (this.plugin.settings.showTokenCount && response.inputTokens && response.outputTokens) {
-        tokenInfo = `${BEACON.TOKENS_PREFIX}${modelAlias}|In=${response.inputTokens},Out=${response.outputTokens}|==\n`;
+        // Calculate cost if available
+        const cost = computeRequestPrice(response.inputTokens, response.outputTokens, modelAlias);
+        const costStr = cost !== null ? `,Cost=${cost.toFixed(6)}` : '';
+        tokenInfo = `${BEACON.TOKENS_PREFIX}${modelAlias}|In=${response.inputTokens},Out=${response.outputTokens}${costStr}|==\n`;
       }
       
       // Add thinking content if present
@@ -1312,7 +1316,7 @@ Step 3: Finally, I select the best solution...`;
     const hasMedia = images.length > 0 || pdfs.length > 0;
     
     // Strip token info before parsing (it's metadata, not conversation content)
-    // Handle both old format |==In=X,Out=Y|== and new format |==model|In=X,Out=Y|==
+    // Handle all formats: |==In=X,Out=Y|==, |==model|In=X,Out=Y|==, |==model|In=X,Out=Y,Cost=Z|==
     let cleanedText = text.replace(/\|==[^|]*\|?In=\d+,Out=\d+[^|]*\|==\n?/g, '');
     
     // Strip thinking blocks (they're internal reasoning, not conversation)

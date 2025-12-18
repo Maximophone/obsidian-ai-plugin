@@ -18,6 +18,16 @@ function formatTokenCount(count: number): string {
   return String(count);
 }
 
+/**
+ * Format cost for display
+ */
+function formatCost(cost: number): string {
+  if (cost < 0.01) {
+    return `$${cost.toFixed(4)}`;
+  }
+  return `$${cost.toFixed(2)}`;
+}
+
 export const modernSkin: Skin = {
   name: 'modern',
   displayName: 'Modern (Clean)',
@@ -71,19 +81,20 @@ export const modernSkin: Skin = {
     let result = content;
     
     // Modern AI header -> |AI| + optional token info
-    // Match: ---  **🤖 [anything]** with optional model and tokens
+    // Match: ---  **🤖 [anything]** with optional model, tokens, and cost
     // Very lenient: \s* matches any whitespace including newlines
     result = result.replace(
-      /\s*---\s*\*\*🤖[^*]*\*\*(?:\s*·\s*`([^`]*)`)?(?:\s*·\s*\*(\d+(?:\.\d+)?k?)\s*in\*\s*·\s*\*(\d+(?:\.\d+)?k?)\s*out\*)?\s*/g,
-      (match, model, tokensIn, tokensOut) => {
+      /\s*---\s*\*\*🤖[^*]*\*\*(?:\s*·\s*`([^`]*)`)?(?:\s*·\s*\*(\d+(?:\.\d+)?k?)\s*in\*\s*·\s*\*(\d+(?:\.\d+)?k?)\s*out\*)?(?:\s*·\s*\*\$([0-9.]+)\*)?\s*/g,
+      (match, model, tokensIn, tokensOut, cost) => {
         let canonical = '|AI|\n';
         if (tokensIn && tokensOut) {
           const inNum = tokensIn.includes('k') ? parseFloat(tokensIn) * 1000 : parseInt(tokensIn);
           const outNum = tokensOut.includes('k') ? parseFloat(tokensOut) * 1000 : parseInt(tokensOut);
+          const costStr = cost ? `,Cost=${cost}` : '';
           if (model) {
-            canonical += `|==${model}|In=${Math.round(inNum)},Out=${Math.round(outNum)}|==\n`;
+            canonical += `|==${model}|In=${Math.round(inNum)},Out=${Math.round(outNum)}${costStr}|==\n`;
           } else {
-            canonical += `|==In=${Math.round(inNum)},Out=${Math.round(outNum)}|==\n`;
+            canonical += `|==In=${Math.round(inNum)},Out=${Math.round(outNum)}${costStr}|==\n`;
           }
         }
         return canonical;
@@ -130,19 +141,27 @@ export const modernSkin: Skin = {
       (match, content) => `<details>\n<summary>💭 Thoughts</summary>\n\n${content.trim()}\n\n</details>\n\n`
     );
     
-    // |AI| with model and token info: |==model|In=X,Out=Y|==
+    // |AI| with model, tokens, and optional cost: |==model|In=X,Out=Y,Cost=Z|== or |==model|In=X,Out=Y|==
     result = result.replace(
-      /\|AI\|\s*\|==([^|]+)\|In=(\d+),Out=(\d+)\|==\s*/g,
-      (match, model, tokensIn, tokensOut) => {
-        return `\n\n---\n\n**🤖 Assistant** · \`${model}\` · *${formatTokenCount(parseInt(tokensIn))} in* · *${formatTokenCount(parseInt(tokensOut))} out*\n\n`;
+      /\|AI\|\s*\|==([^|]+)\|In=(\d+),Out=(\d+)(?:,Cost=([0-9.]+))?\|==\s*/g,
+      (match, model, tokensIn, tokensOut, cost) => {
+        let header = `\n\n---\n\n**🤖 Assistant** · \`${model}\` · *${formatTokenCount(parseInt(tokensIn))} in* · *${formatTokenCount(parseInt(tokensOut))} out*`;
+        if (cost) {
+          header += ` · *${formatCost(parseFloat(cost))}*`;
+        }
+        return header + '\n\n';
       }
     );
     
-    // |AI| with old format token info (no model): |==In=X,Out=Y|==
+    // |AI| with old format token info (no model): |==In=X,Out=Y|== or |==In=X,Out=Y,Cost=Z|==
     result = result.replace(
-      /\|AI\|\s*\|==In=(\d+),Out=(\d+)\|==\s*/g,
-      (match, tokensIn, tokensOut) => {
-        return `\n\n---\n\n**🤖 Assistant** · *${formatTokenCount(parseInt(tokensIn))} in* · *${formatTokenCount(parseInt(tokensOut))} out*\n\n`;
+      /\|AI\|\s*\|==In=(\d+),Out=(\d+)(?:,Cost=([0-9.]+))?\|==\s*/g,
+      (match, tokensIn, tokensOut, cost) => {
+        let header = `\n\n---\n\n**🤖 Assistant** · *${formatTokenCount(parseInt(tokensIn))} in* · *${formatTokenCount(parseInt(tokensOut))} out*`;
+        if (cost) {
+          header += ` · *${formatCost(parseFloat(cost))}*`;
+        }
+        return header + '\n\n';
       }
     );
     
