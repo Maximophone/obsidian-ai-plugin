@@ -995,7 +995,7 @@ Step 3: Finally, I select the best solution...`;
         
         let tokenInfo = '';
         if (this.plugin.settings.showTokenCount) {
-          tokenInfo = `${BEACON.TOKENS_PREFIX}In=0,Out=0 (MOCK)|==\n`;
+          tokenInfo = `${BEACON.TOKENS_PREFIX}${modelAlias}|In=0,Out=0 (MOCK)|==\n`;
         }
         
         const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${mockContent}\n${BEACON.ME}\n`;
@@ -1039,7 +1039,7 @@ Step 3: Finally, I select the best solution...`;
       // Build the result block
       let tokenInfo = '';
       if (this.plugin.settings.showTokenCount && response.inputTokens && response.outputTokens) {
-        tokenInfo = `${BEACON.TOKENS_PREFIX}In=${response.inputTokens},Out=${response.outputTokens}|==\n`;
+        tokenInfo = `${BEACON.TOKENS_PREFIX}${modelAlias}|In=${response.inputTokens},Out=${response.outputTokens}|==\n`;
       }
       
       // Add thinking content if present
@@ -1312,7 +1312,8 @@ Step 3: Finally, I select the best solution...`;
     const hasMedia = images.length > 0 || pdfs.length > 0;
     
     // Strip token info before parsing (it's metadata, not conversation content)
-    let cleanedText = text.replace(/\|==In=\d+,Out=\d+\|==\n?/g, '');
+    // Handle both old format |==In=X,Out=Y|== and new format |==model|In=X,Out=Y|==
+    let cleanedText = text.replace(/\|==[^|]*\|?In=\d+,Out=\d+[^|]*\|==\n?/g, '');
     
     // Strip thinking blocks (they're internal reasoning, not conversation)
     cleanedText = cleanedText.replace(/\|THOUGHT\|\n[\s\S]*?\n\|\/THOUGHT\|\n?/g, '');

@@ -218,9 +218,14 @@ export class AIService {
     let response;
     try {
       response = await requestUrl(requestParams);
-    } catch (e) {
-      log(`\n**Request failed:** ${e.message || String(e)}`);
-      const error = new Error(`Anthropic API error: ${e.message || String(e)}`);
+    } catch (e: any) {
+      // Try to extract detailed error info from Obsidian's requestUrl exception
+      const errorDetails = e.response?.text || e.response?.json?.error?.message || e.message || String(e);
+      log(`\n**Request failed:** ${errorDetails}`);
+      if (e.response?.json) {
+        log(`**Error response:**\n\`\`\`json\n${JSON.stringify(e.response.json, null, 2)}\n\`\`\``);
+      }
+      const error = new Error(`Anthropic API error: ${errorDetails}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
