@@ -1165,13 +1165,29 @@ Step 3: Finally, I select the best solution...`;
   }
   
   /**
-   * Convert raw [[wikilinks]] to doc references using pre-loaded content
+   * Convert raw [[wikilinks]] to doc references using pre-loaded content.
+   * 
+   * IMPORTANT: Wikilinks inside existing <document> blocks are NOT expanded.
+   * Those blocks came from explicit <doc!> tags, and their content should be
+   * preserved as-is. This prevents double-inclusion when a referenced document
+   * contains wikilinks to other documents that were also explicitly included.
    */
   private convertWikilinksToDocRefs(text: string, loadedDocs: LoadedDocuments): string {
-    // Match wikilinks with optional display text: [[target]] or [[target|display]]
-    const pattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+    // Protect existing <document> blocks from wikilink expansion
+    // These came from <doc!> tags and should not have their content modified
+    const documentBlockPattern = /<document>[\s\S]*?<\/document>/g;
+    const wikiLinkPattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
     
-    return text.replace(pattern, (match, target, displayText) => {
+    // Replace document blocks with placeholders to protect them
+    const documentBlocks: string[] = [];
+    let textWithPlaceholders = text.replace(documentBlockPattern, (match) => {
+      const index = documentBlocks.length;
+      documentBlocks.push(match);
+      return `__DOCBLOCK_PLACEHOLDER_${index}__`;
+    });
+    
+    // Expand wikilinks only in the unprotected text
+    textWithPlaceholders = textWithPlaceholders.replace(wikiLinkPattern, (match, target, displayText) => {
       const key = `[[${target.trim()}]]`;
       const loaded = loadedDocs[key];
       
@@ -1187,6 +1203,13 @@ Step 3: Finally, I select the best solution...`;
       // Keep original if not found in loaded docs
       return match;
     });
+    
+    // Restore the protected document blocks
+    for (let i = 0; i < documentBlocks.length; i++) {
+      textWithPlaceholders = textWithPlaceholders.replace(`__DOCBLOCK_PLACEHOLDER_${i}__`, documentBlocks[i]);
+    }
+    
+    return textWithPlaceholders;
   }
   
   /**
