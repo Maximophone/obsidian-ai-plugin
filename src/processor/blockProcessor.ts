@@ -1815,6 +1815,7 @@ Add custom models in plugin settings.
     if (branchTags.length === 0) return block.fullMatch;
     
     let blockText = block.text;
+    const newBranchLinks: string[] = [];
     
     // Process each branch tag (in reverse order to preserve indices)
     for (let i = branchTags.length - 1; i >= 0; i--) {
@@ -1836,6 +1837,9 @@ Add custom models in plugin settings.
         const branchLink = `<ignore!>🌿 Branch: [[${noteName}]]</ignore!>`;
         blockText = blockText.substring(0, branchTag.startIndex) + branchLink + blockText.substring(branchTag.endIndex);
         
+        // Track the new branch for the index
+        newBranchLinks.push(noteName);
+        
         new Notice(`Created branch: ${noteName}`, 3000);
       } else {
         // Failed to create branch - replace with error message
@@ -1845,9 +1849,56 @@ Add custom models in plugin settings.
       }
     }
     
+    // Update or create the branch index at the top of the block
+    blockText = this.updateBranchIndex(blockText, newBranchLinks);
+    
     // Reconstruct the AI block
     const optionTxt = block.value || '';
     return `<ai!${optionTxt}>${blockText}</ai!>`;
+  }
+  
+  /**
+   * Update or create the branch index at the top of the AI block
+   * The index lists all branches in this conversation
+   */
+  private updateBranchIndex(blockText: string, newBranchLinks: string[]): string {
+    // Pattern to find existing branch index
+    const indexPattern = /<ignore!>\s*📑\s*\*\*Branches:\*\*\n([\s\S]*?)<\/ignore!>\n*/;
+    const indexMatch = blockText.match(indexPattern);
+    
+    // Collect existing branches from the index
+    let existingBranches: string[] = [];
+    if (indexMatch) {
+      // Parse the existing branch list
+      const branchListText = indexMatch[1];
+      const linkPattern = /\[\[([^\]]+)\]\]/g;
+      let match;
+      while ((match = linkPattern.exec(branchListText)) !== null) {
+        existingBranches.push(match[1]);
+      }
+      // Remove the old index from the block text
+      blockText = blockText.replace(indexPattern, '');
+    }
+    
+    // Combine existing and new branches (new ones first since they were processed in reverse)
+    const allBranches = [...newBranchLinks.reverse(), ...existingBranches];
+    
+    // Remove duplicates while preserving order
+    const uniqueBranches = [...new Set(allBranches)];
+    
+    if (uniqueBranches.length === 0) {
+      return blockText;
+    }
+    
+    // Create the new branch index
+    const branchList = uniqueBranches.map(b => `- [[${b}]]`).join('\n');
+    const branchIndex = `<ignore!>📑 **Branches:**\n${branchList}\n</ignore!>\n\n`;
+    
+    // Insert at the very beginning of the block (after any leading whitespace)
+    const leadingWhitespace = blockText.match(/^(\s*)/)?.[1] || '';
+    const contentWithoutLeading = blockText.substring(leadingWhitespace.length);
+    
+    return leadingWhitespace + branchIndex + contentWithoutLeading;
   }
   
   /**
