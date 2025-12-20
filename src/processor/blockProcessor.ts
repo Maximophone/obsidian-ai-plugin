@@ -1910,14 +1910,18 @@ Add custom models in plugin settings.
     aiBlockOption: string | null
   ): Promise<string | null> {
     try {
-      // Build the note content
+      // Build the note content in canonical format
       const optionTxt = aiBlockOption || '';
       
       // Add a header linking back to the source
       const branchHeader = `> [!info] Branched from [[${sourceFile.basename}]]\n\n`;
       
-      // Wrap the conversation content in AI tags
-      const noteContent = `${branchHeader}<ai!${optionTxt}>${conversationContent}</ai!>`;
+      // Wrap the conversation content in AI tags (still in canonical format)
+      const canonicalContent = `${branchHeader}<ai!${optionTxt}>${conversationContent}</ai!>`;
+      
+      // Convert from canonical to active skin before writing
+      const activeSkin = getSkin(this.plugin.settings.chatSkin);
+      const noteContent = activeSkin.fromCanonical(canonicalContent);
       
       // Create the note
       await this.plugin.app.vault.create(notePath, noteContent);
