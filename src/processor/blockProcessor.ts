@@ -1749,11 +1749,31 @@ Add custom models in plugin settings.
   }
   
   /**
-   * Check if content has a branch tag
+   * Check if content has a branch tag (including inside AI blocks)
    */
   hasBranchTag(content: string): boolean {
-    const [, tags] = processTags(content);
-    return tags.some(t => t.name === 'branch');
+    // Convert to canonical for consistent processing
+    const activeSkin = getSkin(this.plugin.settings.chatSkin);
+    const canonicalContent = activeSkin.toCanonical(content);
+    
+    // First check top-level tags
+    const [, tags] = processTags(canonicalContent);
+    if (tags.some(t => t.name === 'branch')) {
+      return true;
+    }
+    
+    // Also check inside AI blocks (branch tags are nested inside <ai!>)
+    const aiBlocks = tags.filter(t => t.name === 'ai');
+    for (const block of aiBlocks) {
+      if (block.text) {
+        const [, innerTags] = processTags(block.text);
+        if (innerTags.some(t => t.name === 'branch')) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
   
   /**
