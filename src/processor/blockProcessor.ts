@@ -1863,7 +1863,7 @@ Add custom models in plugin settings.
    */
   private updateBranchIndex(blockText: string, newBranchLinks: string[]): string {
     // Pattern to find existing branch index
-    const indexPattern = /<ignore!>\s*📑\s*\*\*Branches:\*\*\n([\s\S]*?)<\/ignore!>\n*/;
+    const indexPattern = /<ignore!>\s*🌿\s*\*\*Branches:\*\*\n([\s\S]*?)<\/ignore!>\n*/;
     const indexMatch = blockText.match(indexPattern);
     
     // Collect existing branches from the index
@@ -1892,7 +1892,7 @@ Add custom models in plugin settings.
     
     // Create the new branch index
     const branchList = uniqueBranches.map(b => `- [[${b}]]`).join('\n');
-    const branchIndex = `<ignore!>📑 **Branches:**\n${branchList}\n</ignore!>\n\n`;
+    const branchIndex = `<ignore!>🌿 **Branches:**\n${branchList}\n</ignore!>\n\n`;
     
     // Insert at the very beginning of the block (after any leading whitespace)
     const leadingWhitespace = blockText.match(/^(\s*)/)?.[1] || '';
