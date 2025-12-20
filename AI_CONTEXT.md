@@ -71,6 +71,8 @@ When the file is saved, the plugin:
 | `<mock!>` | Echo request without API call | `<mock!>` |
 | `<tools!obsidian>` | Enable tool use | `<tools!obsidian>` |
 | `<help!>` | Show help text | `<help!>` |
+| `<branch!>` or `<branch!"name">` | Create conversation branch | `<branch!"alternative">` |
+| `<ignore!>...</ignore!>` | Exclude content from AI context | `<ignore!>hidden text</ignore!>` |
 
 ---
 
@@ -333,6 +335,53 @@ Plugin settings in Obsidian settings panel:
 ```
 https://github.com/Maximophone/obsidian-ai-plugin
 ```
+
+---
+
+## Conversation Branching
+
+The branching feature allows users to fork a conversation at any point into a new note.
+
+### How It Works
+
+1. User places `<branch!>` or `<branch!"custom name">` tag inside an AI block
+2. When the file is saved, the plugin:
+   - Creates a new note with the conversation content **up to** the branch tag
+   - The new note is named `{Original Note} (branch {name}).md`
+   - Replaces the `<branch!>` tag with `<ignore!>🌿 Branch: [[New Note]]</ignore!>`
+3. The `<ignore!>` wrapper ensures the branch link doesn't pollute the AI context
+
+### Example
+
+**Before (in "My Chat.md"):**
+```markdown
+<ai!>
+What's 2+2?
+|AI|
+The answer is 4.
+|ME|
+<branch!"math followup">
+What about 3+3?
+<reply!>
+</ai!>
+```
+
+**After:**
+- Original file has branch tag replaced with link wrapped in `<ignore!>`
+- New file "My Chat (branch math followup).md" created with conversation up to branch point
+
+### Key Files
+
+- `src/processor/blockProcessor.ts`: `processBranchTags()`, `processBranchInBlock()`, `createBranchNote()`
+- `src/main.ts`: `processBranches()`, integration into `checkAndProcessFile()`
+
+### The `<ignore!>` Tag
+
+Content wrapped in `<ignore!>...</ignore!>` is:
+- **Visible** in the note (user can see it and click links)
+- **Stripped** from AI context (AI never sees it)
+
+This is used for branch links but can also be used manually for any metadata you want to hide from the AI.
 
 ---
 

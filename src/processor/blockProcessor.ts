@@ -3,7 +3,7 @@
  * Port of process_ai_block.py
  */
 
-import { TFile, Notice, Platform, requestUrl } from 'obsidian';
+import { TFile, Notice, Platform, requestUrl, TFolder } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
 import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolCall, AIToolResult } from '../types';
 import { ToolDefinition } from '../tools';
@@ -1128,6 +1128,7 @@ Step 3: Finally, I select the best solution...`;
       // Remove parameter tags (we'll extract them separately)
       reply: () => '',
       back: () => '',
+      ignore: (v, text) => '', // Content in <ignore!>...</ignore!> is stripped from AI context
       model: (v) => { collectedTags.push({name: 'model', value: v, text: null}); return ''; },
       system: (v) => { collectedTags.push({name: 'system', value: v, text: null}); return ''; },
       debug: () => { collectedTags.push({name: 'debug', value: null, text: null}); return ''; },
@@ -1666,6 +1667,38 @@ Solve this step by step: What is 17 * 23 + 45 / 9?
 - \`<URL!https://...>\` - Fetch and include webpage content
 - \`<INLINE!>\` - Treat all [[links]] as document references (include their content)
 
+## Branching Conversations
+
+Use \`<BRANCH!>\` to create a new note with a copy of the conversation up to that point:
+
+\`\`\`
+<AI!>
+<MODEL!sonnet4>
+What should I cook tonight?
+|AI|
+How about a Thai curry or pasta?
+|ME|
+<BRANCH!"exploring thai">
+Tell me more about the Thai curry option.
+<REPLY!>
+</AI!>
+\`\`\`
+
+When saved, this creates a new note "Your Note (branch exploring thai)" containing the conversation up to the branch point, and replaces the \`<BRANCH!>\` tag with a link to the new note.
+
+- \`<BRANCH!>\` - Create branch with auto-generated timestamp name
+- \`<BRANCH!"name">\` - Create branch with custom name
+
+The branch link is wrapped in \`<IGNORE!>\` so it doesn't affect AI context if you continue the original conversation.
+
+### Ignoring Content
+
+Use \`<IGNORE!>...\` to exclude content from AI processing while keeping it visible:
+
+\`\`\`
+<IGNORE!>This text is visible but the AI won't see it</IGNORE!>
+\`\`\`
+
 ### Inline Mode
 
 Use \`<INLINE!>\` to automatically include the content of all [[linked notes]] in your prompt:
@@ -1714,6 +1747,167 @@ You can also use direct format: \`<MODEL!anthropic:claude-3-opus-20240229>\`
 Add custom models in plugin settings.
 `;
   }
+  
+  /**
+   * Check if content has a branch tag
+   */
+  hasBranchTag(content: string): boolean {
+    const [, tags] = processTags(content);
+    return tags.some(t => t.name === 'branch');
+  }
+  
+  /**
+   * Process branch tags in content
+   * Creates new notes for branches and replaces branch tags with links
+   * @returns The modified content with branch tags replaced by links
+   */
+  async processBranchTags(content: string, sourceFile: TFile): Promise<string> {
+    // Convert to canonical for consistent processing
+    const activeSkin = getSkin(this.plugin.settings.chatSkin);
+    const canonicalContent = activeSkin.toCanonical(content);
+    
+    // Find all AI blocks
+    const [, tags] = processTags(canonicalContent);
+    const aiBlocks = tags.filter(t => t.name === 'ai');
+    
+    let result = canonicalContent;
+    
+    for (const block of aiBlocks) {
+      if (block.text && this.hasBranchTag(block.text)) {
+        const processedBlock = await this.processBranchInBlock(block, sourceFile);
+        result = result.replace(block.fullMatch, processedBlock);
+      }
+    }
+    
+    // Convert back to active skin
+    return activeSkin.fromCanonical(result);
+  }
+  
+  /**
+   * Process branch tags within a single AI block
+   */
+  private async processBranchInBlock(block: { value: string | null; text: string | null; fullMatch: string }, sourceFile: TFile): Promise<string> {
+    if (!block.text) return block.fullMatch;
+    
+    // Find all branch tags in the block
+    const branchTags = extractTags(block.text).filter(t => t.name === 'branch');
+    
+    if (branchTags.length === 0) return block.fullMatch;
+    
+    let blockText = block.text;
+    
+    // Process each branch tag (in reverse order to preserve indices)
+    for (let i = branchTags.length - 1; i >= 0; i--) {
+      const branchTag = branchTags[i];
+      
+      // Extract content up to (but not including) the branch tag
+      const contentUpToBranch = blockText.substring(0, branchTag.startIndex);
+      
+      // Create the new branch note
+      const branchName = branchTag.value || this.generateBranchName();
+      const sanitizedBranchName = sanitizeNoteTitle(branchName);
+      const newNotePath = await this.createBranchNote(sourceFile, contentUpToBranch, sanitizedBranchName, block.value);
+      
+      if (newNotePath) {
+        // Get just the note name for the wikilink (without .md extension and folder)
+        const noteName = newNotePath.replace(/\.md$/, '').split('/').pop() || newNotePath;
+        
+        // Replace the branch tag with an ignored link
+        const branchLink = `<ignore!>🌿 Branch: [[${noteName}]]</ignore!>`;
+        blockText = blockText.substring(0, branchTag.startIndex) + branchLink + blockText.substring(branchTag.endIndex);
+        
+        new Notice(`Created branch: ${noteName}`, 3000);
+      } else {
+        // Failed to create branch - replace with error message
+        blockText = blockText.substring(0, branchTag.startIndex) + 
+          `<ignore!>❌ Failed to create branch "${sanitizedBranchName}"</ignore!>` + 
+          blockText.substring(branchTag.endIndex);
+      }
+    }
+    
+    // Reconstruct the AI block
+    const optionTxt = block.value || '';
+    return `<ai!${optionTxt}>${blockText}</ai!>`;
+  }
+  
+  /**
+   * Generate a branch name when none is specified
+   * Uses timestamp for uniqueness
+   */
+  private generateBranchName(): string {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}h${pad(now.getMinutes())}`;
+  }
+  
+  /**
+   * Create a new branch note
+   * @returns The path of the created note, or null if failed
+   */
+  private async createBranchNote(
+    sourceFile: TFile,
+    conversationContent: string,
+    branchName: string,
+    aiBlockOption: string | null
+  ): Promise<string | null> {
+    try {
+      // Get the source note's basename (without extension)
+      const sourceBasename = sourceFile.basename;
+      const sourceFolder = sourceFile.parent?.path || '';
+      
+      // Create the new note name
+      const newNoteName = `${sourceBasename} (branch ${branchName})`;
+      const newNotePath = sourceFolder ? `${sourceFolder}/${newNoteName}.md` : `${newNoteName}.md`;
+      
+      // Check if a note with this name already exists
+      const existingFile = this.plugin.app.vault.getAbstractFileByPath(newNotePath);
+      if (existingFile) {
+        // Append a number to make it unique
+        let counter = 2;
+        let uniquePath = newNotePath;
+        while (this.plugin.app.vault.getAbstractFileByPath(uniquePath)) {
+          const uniqueName = `${sourceBasename} (branch ${branchName} ${counter})`;
+          uniquePath = sourceFolder ? `${sourceFolder}/${uniqueName}.md` : `${uniqueName}.md`;
+          counter++;
+        }
+        return await this.writeBranchNote(uniquePath, conversationContent, sourceFile, aiBlockOption);
+      }
+      
+      return await this.writeBranchNote(newNotePath, conversationContent, sourceFile, aiBlockOption);
+    } catch (error) {
+      console.error('Error creating branch note:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Write the branch note content
+   */
+  private async writeBranchNote(
+    notePath: string,
+    conversationContent: string,
+    sourceFile: TFile,
+    aiBlockOption: string | null
+  ): Promise<string | null> {
+    try {
+      // Build the note content
+      const optionTxt = aiBlockOption || '';
+      
+      // Add a header linking back to the source
+      const branchHeader = `> [!info] Branched from [[${sourceFile.basename}]]\n\n`;
+      
+      // Wrap the conversation content in AI tags
+      const noteContent = `${branchHeader}<ai!${optionTxt}>${conversationContent}</ai!>`;
+      
+      // Create the note
+      await this.plugin.app.vault.create(notePath, noteContent);
+      
+      return notePath;
+    } catch (error) {
+      console.error('Error writing branch note:', error);
+      return null;
+    }
+  }
 }
 
 /**
@@ -1721,5 +1915,13 @@ Add custom models in plugin settings.
  */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Sanitize a string for use as a note title
+ * Removes characters that are invalid in Obsidian note names: [ ] # ^ | \
+ */
+function sanitizeNoteTitle(title: string): string {
+  return title.replace(/[\[\]#^|\\]/g, '').trim();
 }
 

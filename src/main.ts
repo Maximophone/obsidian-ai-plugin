@@ -180,6 +180,15 @@ export default class ObsidianAIPlugin extends Plugin {
       },
     });
     
+    // Insert branch tag
+    this.addCommand({
+      id: 'insert-branch',
+      name: 'Insert branch tag (create conversation branch)',
+      editorCallback: (editor) => {
+        this.insertAtCursor(editor, '<branch!>');
+      },
+    });
+    
     // Insert help tag
     this.addCommand({
       id: 'insert-help',
@@ -271,9 +280,33 @@ export default class ObsidianAIPlugin extends Plugin {
   async checkAndProcessFile(file: TFile): Promise<void> {
     const content = await this.app.vault.read(file);
     
+    // Check if file has any branch tags first
+    if (this.blockProcessor.hasBranchTag(content)) {
+      await this.processBranches(file);
+      return;
+    }
+    
     // Check if file has any AI blocks with reply tags
     if (this.needsAnswer(content)) {
       await this.processFile(file);
+    }
+  }
+  
+  /**
+   * Process branch tags in a file
+   * Creates new notes for branches and replaces branch tags with links
+   */
+  async processBranches(file: TFile): Promise<void> {
+    try {
+      const content = await this.app.vault.read(file);
+      const newContent = await this.blockProcessor.processBranchTags(content, file);
+      
+      if (newContent !== content) {
+        await this.app.vault.modify(file, newContent);
+      }
+    } catch (error) {
+      console.error('Error processing branches:', error);
+      new Notice(`Error processing branches: ${error.message}`);
     }
   }
   
