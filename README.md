@@ -83,6 +83,7 @@ Commands are the fastest way to insert AI tags. Open the Command Palette (`Cmd+P
 | **Insert think tag** | Enable extended thinking |
 | **Insert debug tag** | Show detailed API logs |
 | **Insert mock tag** | Test without API calls |
+| **Insert branch tag** | Create conversation branch |
 | **Insert URL tag** | Fetch webpage content |
 | **Insert system prompt** | Set system instructions |
 | **Insert inline tag** | Include all linked notes |
@@ -224,6 +225,46 @@ When the AI tries to create or modify content, you'll see a confirmation dialog.
 
 ---
 
+## 🌿 Conversation Branching
+
+Fork a conversation at any point into a new note:
+
+```markdown
+<ai!>
+What should I cook tonight?
+|AI|
+You could try Thai curry, pasta, or a stir-fry...
+|ME|
+<branch!"exploring thai">
+Tell me more about Thai curry.
+<reply!>
+</ai!>
+```
+
+When saved:
+- A new note **"Your Note (branch exploring thai).md"** is created with the conversation up to the branch point
+- The branch tag is replaced with a link: `🌿 Branch: [[Your Note (branch exploring thai)]]`
+- A **branch index** appears at the top of the AI block listing all branches
+
+### Branch Syntax
+
+```markdown
+<branch!>                    <!-- Auto-generated timestamp name -->
+<branch!"custom name">       <!-- Custom branch name -->
+```
+
+### Ignoring Content
+
+Hide content from the AI while keeping it visible:
+
+```markdown
+<ignore!>This is visible but the AI won't see it</ignore!>
+```
+
+Useful for notes, metadata, or branch links that shouldn't affect AI context.
+
+---
+
 ## 🧠 Extended Thinking
 
 Enable reasoning mode for complex problems:
@@ -300,6 +341,8 @@ This will echo the request parameters.
 | `<help!>` | Show help | `<help!>` |
 | `<temperature!n>` | Set temperature | `<temperature!0.5>` |
 | `<max_tokens!n>` | Set max tokens | `<max_tokens!8000>` |
+| `<branch!>` | Create conversation branch | `<branch!"option A">` |
+| `<ignore!>...</ignore!>` | Hide from AI context | `<ignore!>note</ignore!>` |
 
 ---
 

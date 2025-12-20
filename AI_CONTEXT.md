@@ -349,7 +349,25 @@ The branching feature allows users to fork a conversation at any point into a ne
    - Creates a new note with the conversation content **up to** the branch tag
    - The new note is named `{Original Note} (branch {name}).md`
    - Replaces the `<branch!>` tag with `<ignore!>🌿 Branch: [[New Note]]</ignore!>`
+   - **Adds/updates a branch index** at the top of the AI block listing all branches
 3. The `<ignore!>` wrapper ensures the branch link doesn't pollute the AI context
+
+### Branch Index
+
+When branches are created, a branch index is automatically added at the top of the AI block:
+
+```markdown
+<ai!>
+<ignore!>🌿 **Branches:**
+- [[My Chat (branch option A)]]
+- [[My Chat (branch option B)]]
+</ignore!>
+
+...rest of conversation...
+</ai!>
+```
+
+This provides quick navigation to all branches without scrolling through the entire conversation.
 
 ### Example
 
@@ -367,12 +385,29 @@ What about 3+3?
 ```
 
 **After:**
-- Original file has branch tag replaced with link wrapped in `<ignore!>`
-- New file "My Chat (branch math followup).md" created with conversation up to branch point
+```markdown
+<ai!>
+<ignore!>🌿 **Branches:**
+- [[My Chat (branch math followup)]]
+</ignore!>
+
+What's 2+2?
+|AI|
+The answer is 4.
+|ME|
+<ignore!>🌿 Branch: [[My Chat (branch math followup)]]</ignore!>
+What about 3+3?
+<reply!>
+</ai!>
+```
+
+And a new file "My Chat (branch math followup).md" is created with:
+- A callout linking back to the original: `> [!info] Branched from [[My Chat]]`
+- The conversation content up to the branch point
 
 ### Key Files
 
-- `src/processor/blockProcessor.ts`: `processBranchTags()`, `processBranchInBlock()`, `createBranchNote()`
+- `src/processor/blockProcessor.ts`: `processBranchTags()`, `processBranchInBlock()`, `createBranchNote()`, `updateBranchIndex()`
 - `src/main.ts`: `processBranches()`, integration into `checkAndProcessFile()`
 
 ### The `<ignore!>` Tag
@@ -381,7 +416,7 @@ Content wrapped in `<ignore!>...</ignore!>` is:
 - **Visible** in the note (user can see it and click links)
 - **Stripped** from AI context (AI never sees it)
 
-This is used for branch links but can also be used manually for any metadata you want to hide from the AI.
+This is used for branch links and the branch index, but can also be used manually for any metadata you want to hide from the AI.
 
 ---
 
