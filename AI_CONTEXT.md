@@ -292,6 +292,35 @@ npm run dev    # Watch mode for development
 npm run build  # Production build
 ```
 
+### Releasing
+
+Releases are automated via GitHub Actions (`.github/workflows/release.yml`).
+
+**To create a new release:**
+
+1. Update version in `manifest.json`, `package.json`, and `versions.json`
+2. Commit the version bump
+3. Create and push a tag:
+   ```bash
+   git tag 0.1.4
+   git push origin 0.1.4
+   ```
+4. GitHub Action automatically:
+   - Builds the plugin (`npm install && npm run build`)
+   - Creates a GitHub release with the tag name
+   - Attaches `main.js`, `manifest.json`, and `styles.css` as release assets
+
+**Important notes:**
+- `main.js` is in `.gitignore` - it's built fresh by the CI, not committed
+- The workflow needs `permissions: contents: write` to create releases
+- Release notes are auto-generated from commits since last tag
+
+**Manual release (if needed):**
+```bash
+npm run build
+gh release create 0.1.4 --title "0.1.4" --generate-notes main.js manifest.json styles.css
+```
+
 ---
 
 ## Obsidian Commands Registered
