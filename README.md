@@ -223,6 +223,47 @@ Search my vault for notes about "project planning" and summarize what you find.
 
 When the AI tries to create or modify content, you'll see a confirmation dialog.
 
+### External MCP Servers
+
+Connect to external [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers to add more tools. This lets you use third-party services like [Exa](https://exa.ai/) for web search, or run your own custom tool servers.
+
+**Setting up an MCP server:**
+
+1. Go to **Settings → Obsidian AI → MCP Servers**
+2. Click **+ Add Server**
+3. Configure:
+   - **Name** — Display name (used in `<tools!mcp:name>`)
+   - **URL** — Server endpoint (include API key in URL for standard MCP)
+   - **Transport** — "Standard (JSON-RPC)" for most MCP servers, "Legacy (REST)" for custom servers
+
+**Example: Connecting to Exa for web search:**
+
+1. Get an API key from [dashboard.exa.ai](https://dashboard.exa.ai/api-keys)
+2. Add server with:
+   - Name: `exa`
+   - URL: `https://mcp.exa.ai/mcp?exaApiKey=YOUR_API_KEY`
+   - Transport: Standard (JSON-RPC)
+3. Use in your notes:
+
+```markdown
+<ai!>
+<tools!mcp:exa>
+Search the web for recent news about AI agents.
+<reply!>
+</ai!>
+```
+
+**Combine multiple toolsets:**
+
+```markdown
+<ai!>
+<tools!obsidian>
+<tools!mcp:exa>
+Search my vault for notes about "project X", then search the web for related resources.
+<reply!>
+</ai!>
+```
+
 ---
 
 ## 🌿 Conversation Branching
@@ -333,7 +374,7 @@ This will echo the request parameters.
 | `<pdf!"/path">` | Include PDF | `<pdf!"/doc.pdf">` |
 | `<url!"url">` | Fetch webpage | `<url!"https://...">` |
 | `<prompt!"name">` | Load saved prompt | `<prompt!"coding">` |
-| `<tools!name>` | Enable tool use | `<tools!obsidian>` |
+| `<tools!name>` | Enable tool use | `<tools!obsidian>`, `<tools!mcp:exa>` |
 | `<think!>` | Extended thinking | `<think!50000>` |
 | `<debug!>` | Show API details | `<debug!>` |
 | `<mock!>` | Test without API | `<mock!>` |
