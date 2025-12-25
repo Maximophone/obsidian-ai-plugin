@@ -1,18 +1,21 @@
 /**
  * MCP Client - Connects to MCP servers and executes tools
+ * 
+ * Supports two transport types:
+ * - 'standard': JSON-RPC 2.0 over HTTP (MCP specification compliant)
+ * - 'legacy': Custom REST API (for backward compatibility with custom servers)
  */
 
 import { ToolDefinition, ToolParameter, RegisteredTool, Toolset } from './types';
+import { MCPServerConfig } from '../types';
 import { requestUrl, RequestUrlResponse } from 'obsidian';
+import { StandardMCPClient, MCPStandardTool } from './standardMcpClient';
 
-export interface MCPServerConfig {
-  name: string;           // Display name for this server
-  url: string;            // Base URL (e.g., "http://127.0.0.1:8765")
-  apiKey: string;         // API key for authentication
-  enabled: boolean;       // Whether this server is enabled
-}
+// Re-export for convenience
+export type { MCPServerConfig };
 
-interface MCPToolDefinition {
+// Legacy MCP tool definition (from custom REST API)
+interface LegacyMCPToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, {
@@ -25,21 +28,32 @@ interface MCPToolDefinition {
   safe: boolean;
 }
 
-interface MCPToolsResponse {
-  tools: MCPToolDefinition[];
+interface LegacyMCPToolsResponse {
+  tools: LegacyMCPToolDefinition[];
 }
 
-interface MCPExecuteResponse {
+interface LegacyMCPExecuteResponse {
   result?: string;
   error?: string;
 }
 
 /**
- * MCP Client - handles communication with a single MCP server
+ * Common interface for MCP clients
  */
-export class MCPClient {
+export interface IMCPClient {
+  fetchTools(): Promise<ToolDefinition[]>;
+  executeTool(name: string, args: Record<string, unknown>): Promise<string>;
+  getConfig(): MCPServerConfig;
+  isHealthy(): Promise<boolean>;
+}
+
+/**
+ * Legacy MCP Client - handles communication using custom REST API
+ * Used for backward compatibility with existing custom MCP servers
+ */
+export class LegacyMCPClient implements IMCPClient {
   private config: MCPServerConfig;
-  private cachedTools: MCPToolDefinition[] | null = null;
+  private cachedTools: LegacyMCPToolDefinition[] | null = null;
 
   constructor(config: MCPServerConfig) {
     this.config = config;
@@ -61,7 +75,7 @@ export class MCPClient {
     body?: unknown
   ): Promise<RequestUrlResponse> {
     const url = `${this.baseUrl}${path}`;
-    
+
     const options: Parameters<typeof requestUrl>[0] = {
       url,
       method,
@@ -93,22 +107,48 @@ export class MCPClient {
   /**
    * Fetch available tools from the server
    */
-  async fetchTools(): Promise<MCPToolDefinition[]> {
+  async fetchTools(): Promise<ToolDefinition[]> {
     try {
       const response = await this.request('GET', '/tools');
-      
+
       if (response.status !== 200) {
-        console.error(`MCP server ${this.config.name} returned status ${response.status}`);
+        console.error(`Legacy MCP server ${this.config.name} returned status ${response.status}`);
         return [];
       }
 
-      const data = response.json as MCPToolsResponse;
+      const data = response.json as LegacyMCPToolsResponse;
       this.cachedTools = data.tools || [];
-      return this.cachedTools;
+
+      // Convert to ToolDefinition format
+      return this.cachedTools.map(tool => this.convertToolDefinition(tool));
     } catch (error) {
-      console.error(`Failed to fetch tools from MCP server ${this.config.name}:`, error);
+      console.error(`Failed to fetch tools from legacy MCP server ${this.config.name}:`, error);
       return [];
     }
+  }
+
+  /**
+   * Convert legacy tool definition to internal format
+   */
+  private convertToolDefinition(mcpTool: LegacyMCPToolDefinition): ToolDefinition {
+    const parameters: Record<string, ToolParameter> = {};
+
+    for (const [paramName, paramDef] of Object.entries(mcpTool.parameters)) {
+      parameters[paramName] = {
+        type: paramDef.type as ToolParameter['type'],
+        description: paramDef.description,
+        required: paramDef.required,
+        enum: paramDef.enum,
+        default: paramDef.default,
+      };
+    }
+
+    return {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters,
+      safe: mcpTool.safe,
+    };
   }
 
   /**
@@ -121,7 +161,7 @@ export class MCPClient {
         arguments: args,
       });
 
-      const data = response.json as MCPExecuteResponse;
+      const data = response.json as LegacyMCPExecuteResponse;
 
       if (data.error) {
         return `Error: ${data.error}`;
@@ -129,15 +169,8 @@ export class MCPClient {
 
       return data.result || 'Tool executed successfully (no output)';
     } catch (error) {
-      return `MCP Error: ${error.message}`;
+      return `Legacy MCP Error: ${error.message}`;
     }
-  }
-
-  /**
-   * Get cached tools (call fetchTools first)
-   */
-  getCachedTools(): MCPToolDefinition[] {
-    return this.cachedTools || [];
   }
 
   /**
@@ -149,59 +182,110 @@ export class MCPClient {
 }
 
 /**
- * Convert MCP tool definitions to our internal format
+ * Adapter to wrap StandardMCPClient with IMCPClient interface
  */
-function convertMCPToolDefinition(mcpTool: MCPToolDefinition): ToolDefinition {
-  const parameters: Record<string, ToolParameter> = {};
+class StandardMCPClientAdapter implements IMCPClient {
+  private client: StandardMCPClient;
+  private config: MCPServerConfig;
 
-  for (const [paramName, paramDef] of Object.entries(mcpTool.parameters)) {
-    parameters[paramName] = {
-      type: paramDef.type as ToolParameter['type'],
-      description: paramDef.description,
-      required: paramDef.required,
-      enum: paramDef.enum,
-      default: paramDef.default,
+  constructor(config: MCPServerConfig) {
+    this.config = config;
+    this.client = new StandardMCPClient({
+      name: config.name,
+      url: config.url,
+      enabled: config.enabled,
+    });
+  }
+
+  async fetchTools(): Promise<ToolDefinition[]> {
+    const tools = await this.client.fetchTools();
+    return tools.map(tool => this.convertToolDefinition(tool));
+  }
+
+  /**
+   * Convert standard MCP tool definition to internal format
+   */
+  private convertToolDefinition(mcpTool: MCPStandardTool): ToolDefinition {
+    const parameters: Record<string, ToolParameter> = {};
+
+    if (mcpTool.inputSchema.properties) {
+      for (const [paramName, paramDef] of Object.entries(mcpTool.inputSchema.properties)) {
+        parameters[paramName] = {
+          type: paramDef.type as ToolParameter['type'],
+          description: paramDef.description || '',
+          required: mcpTool.inputSchema.required?.includes(paramName),
+          enum: paramDef.enum,
+        };
+      }
+    }
+
+    return {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters,
+      safe: true, // Standard MCP doesn't have a safe flag, default to safe
     };
   }
 
-  return {
-    name: mcpTool.name,
-    description: mcpTool.description,
-    parameters,
-    safe: mcpTool.safe,
-  };
+  async executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+    return this.client.executeTool(name, args);
+  }
+
+  getConfig(): MCPServerConfig {
+    return this.config;
+  }
+
+  async isHealthy(): Promise<boolean> {
+    return this.client.isHealthy();
+  }
 }
 
 /**
- * Create a toolset from an MCP server
+ * Factory function to create the appropriate MCP client based on transport type
  */
-export async function createMCPToolset(client: MCPClient): Promise<Toolset | null> {
+export function createMCPClient(config: MCPServerConfig): IMCPClient {
+  // Default to legacy for backward compatibility if transport is not specified
+  const transport = config.transport || 'legacy';
+
+  if (transport === 'standard') {
+    console.log(`Creating standard MCP client for ${config.name}`);
+    return new StandardMCPClientAdapter(config);
+  } else {
+    console.log(`Creating legacy MCP client for ${config.name}`);
+    return new LegacyMCPClient(config);
+  }
+}
+
+/**
+ * Create a toolset from an MCP client
+ */
+export async function createMCPToolset(client: IMCPClient): Promise<Toolset | null> {
   const config = client.getConfig();
-  
+
   if (!config.enabled) {
     return null;
   }
 
   // Fetch tools from server
-  const mcpTools = await client.fetchTools();
-  
-  if (mcpTools.length === 0) {
+  const tools = await client.fetchTools();
+
+  if (tools.length === 0) {
     console.warn(`MCP server ${config.name} has no tools`);
     return null;
   }
 
   // Convert to registered tools
-  const tools: RegisteredTool[] = mcpTools.map(mcpTool => ({
-    definition: convertMCPToolDefinition(mcpTool),
+  const registeredTools: RegisteredTool[] = tools.map(toolDef => ({
+    definition: toolDef,
     execute: async (args: Record<string, unknown>) => {
-      return client.executeTool(mcpTool.name, args);
+      return client.executeTool(toolDef.name, args);
     },
   }));
 
   return {
     name: `mcp:${config.name}`,
     description: `Tools from MCP server: ${config.name}`,
-    tools,
+    tools: registeredTools,
   };
 }
 
@@ -209,20 +293,25 @@ export async function createMCPToolset(client: MCPClient): Promise<Toolset | nul
  * MCP Manager - manages multiple MCP server connections
  */
 export class MCPManager {
-  private clients: Map<string, MCPClient> = new Map();
+  private clients: Map<string, IMCPClient> = new Map();
   private toolsets: Map<string, Toolset> = new Map();
 
   /**
    * Add or update a server configuration
    */
   async addServer(config: MCPServerConfig): Promise<void> {
-    const client = new MCPClient(config);
+    const client = createMCPClient(config);
     this.clients.set(config.name, client);
 
     if (config.enabled) {
-      const toolset = await createMCPToolset(client);
-      if (toolset) {
-        this.toolsets.set(config.name, toolset);
+      try {
+        const toolset = await createMCPToolset(client);
+        if (toolset) {
+          this.toolsets.set(config.name, toolset);
+          console.log(`MCP server ${config.name} registered with ${toolset.tools.length} tools`);
+        }
+      } catch (error) {
+        console.error(`Failed to create toolset for MCP server ${config.name}:`, error);
       }
     }
   }
@@ -240,13 +329,17 @@ export class MCPManager {
    */
   async refreshAll(): Promise<void> {
     this.toolsets.clear();
-    
+
     for (const [name, client] of this.clients) {
       const config = client.getConfig();
       if (config.enabled) {
-        const toolset = await createMCPToolset(client);
-        if (toolset) {
-          this.toolsets.set(name, toolset);
+        try {
+          const toolset = await createMCPToolset(client);
+          if (toolset) {
+            this.toolsets.set(name, toolset);
+          }
+        } catch (error) {
+          console.error(`Failed to refresh MCP server ${name}:`, error);
         }
       }
     }
@@ -278,19 +371,18 @@ export class MCPManager {
    */
   async checkHealth(): Promise<Map<string, boolean>> {
     const results = new Map<string, boolean>();
-    
+
     for (const [name, client] of this.clients) {
       results.set(name, await client.isHealthy());
     }
-    
+
     return results;
   }
 
   /**
    * Get a client by name
    */
-  getClient(name: string): MCPClient | undefined {
+  getClient(name: string): IMCPClient | undefined {
     return this.clients.get(name);
   }
 }
-

@@ -173,42 +173,74 @@ See commit `09d1301` for the user's fix implementation.
 
 ---
 
-## Future Plans: MCP and External Tools
+## MCP Server Integration (Implemented)
 
-### The Vision
+The plugin supports connecting to external MCP (Model Context Protocol) servers, allowing you to add tools from third-party services like [Exa](https://exa.ai/) or your own custom servers.
 
-We want to support two types of tools:
+### Transport Types
 
-1. **Built-in Obsidian Tools** (current) - Run inside the plugin using Obsidian API
-2. **External MCP Tools** - Run via a separate Python server
+The plugin supports two MCP transport types:
 
-### MCP (Model Context Protocol)
+1. **Standard (JSON-RPC 2.0)** - For MCP-compliant servers like Exa
+   - Uses JSON-RPC 2.0 over HTTP
+   - Implements `initialize`, `tools/list`, `tools/call` methods
+   - Supports SSE (Server-Sent Events) responses
+   - Session management via `Mcp-Session-Id` header
 
-MCP is an open protocol for connecting AI to external tools/data. The plan:
+2. **Legacy (REST)** - For custom Python servers
+   - Uses simple REST API (`GET /tools`, `POST /execute`)
+   - Bearer token authentication
+   - Simpler to implement for custom servers
 
-1. **Python MCP Server** (`obsidian_ai_server/`)
-   - Runs separately from Obsidian
-   - Exposes tools via HTTP API
-   - Handles complex operations (Gmail, Discord, shell commands, etc.)
-   - Uses API keys for authentication
+### Configuration
 
-2. **Plugin connects to MCP Server**
-   - Plugin discovers available tools from server
-   - Plugin sends tool calls to server
-   - Server executes and returns results
+MCP servers are configured in settings with:
 
-3. **Tool Categories**
-   - `system` - File operations, shell commands, Python execution
-   - `gmail` - Read/send emails
-   - `discord` - Discord bot integration
-   - `gdrive` - Google Drive operations
+```typescript
+interface MCPServerConfig {
+  name: string;           // Display name (used in <tools!mcp:name>)
+  url: string;            // Server endpoint
+  apiKey: string;         // For legacy transport authentication
+  enabled: boolean;       // Whether to connect on load
+  transport: 'standard' | 'legacy';  // Protocol type
+}
+```
 
-### Why MCP?
+### Usage
 
-- Keep plugin lightweight (complex deps in Python)
-- Reuse existing Python implementations from `obsidian_ai`
-- Security: External server can run in sandbox
-- Flexibility: Add tools without plugin updates
+```markdown
+<ai!>
+<tools!mcp:exa>
+Search the web for recent AI news.
+<reply!>
+</ai!>
+```
+
+Multiple toolsets can be combined:
+
+```markdown
+<ai!>
+<tools!obsidian>
+<tools!mcp:exa>
+Search my vault and the web for information about X.
+<reply!>
+</ai!>
+```
+
+### Key Implementation Files
+
+- `src/tools/standardMcpClient.ts` - Standard JSON-RPC 2.0 client
+- `src/tools/mcpClient.ts` - Client factory, legacy client, and MCPManager
+- `src/types.ts` - `MCPServerConfig` interface
+
+### Example: Connecting to Exa
+
+1. Get API key from [dashboard.exa.ai](https://dashboard.exa.ai/api-keys)
+2. Add server in Settings → Obsidian AI → MCP Servers:
+   - Name: `exa`
+   - URL: `https://mcp.exa.ai/mcp?exaApiKey=YOUR_KEY`
+   - Transport: Standard (JSON-RPC)
+3. Use: `<tools!mcp:exa>`
 
 ---
 
@@ -229,6 +261,8 @@ obsidian-ai-plugin/
 │   │   ├── types.ts               # Tool interfaces, format converters
 │   │   ├── toolManager.ts         # Tool registration, execution
 │   │   ├── obsidianTools.ts       # Built-in Obsidian toolset
+│   │   ├── mcpClient.ts           # MCP client factory, LegacyMCPClient, MCPManager
+│   │   ├── standardMcpClient.ts   # Standard MCP client (JSON-RPC 2.0)
 │   │   └── index.ts               # Exports
 │   └── ui/
 │       └── ToolConfirmationModal.ts  # Confirmation dialog for write tools
