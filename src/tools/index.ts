@@ -6,6 +6,7 @@ export * from './types';
 export * from './toolManager';
 export * from './obsidianTools';
 export * from './mcpClient';
+export * from './standardMcpClient';
 
 
 

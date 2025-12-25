@@ -124,9 +124,10 @@ export interface ModelConfig {
 // MCP Server configuration
 export interface MCPServerConfig {
   name: string;           // Display name for this server
-  url: string;            // Base URL (e.g., "http://127.0.0.1:8765")
-  apiKey: string;         // API key for authentication
+  url: string;            // Base URL (e.g., "http://127.0.0.1:8765" or "https://mcp.exa.ai/mcp")
+  apiKey: string;         // API key for authentication (for legacy) or empty (for standard with key in URL)
   enabled: boolean;       // Whether this server is enabled
+  transport: 'standard' | 'legacy';  // 'standard' = JSON-RPC 2.0, 'legacy' = REST API
 }
 
 // Settings
