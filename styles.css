@@ -230,6 +230,11 @@ details summary:hover {
   filter: brightness(1.1);
 }
 
+/* Feedback textarea */
+.tool-confirmation-feedback {
+  width: 100%;
+}
+
 /* MCP Server Settings */
 .obsidian-ai-mcp-server {
   background-color: var(--background-secondary);

@@ -3,23 +3,33 @@
  * Port of process_ai_block.py
  */
 
-import { TFile, Notice, Platform, requestUrl, TFolder } from 'obsidian';
+import { TFile, Notice, Platform, requestUrl } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
-import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolCall, AIToolResult } from '../types';
+import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolResult } from '../types';
 import { ToolDefinition } from '../tools';
 import { showToolConfirmation, ToolConfirmationResult } from '../ui/ToolConfirmationModal';
 import { getSkin } from '../skins';
 import { computeRequestPrice } from '../pricing';
 import type ObsidianAIPlugin from '../main';
-import * as path from 'path';
 
-// Node.js fs module - only available on desktop
-let fs: typeof import('fs') | null = null;
+// Node.js modules for reading external files - desktop only
+// Using dynamic require to satisfy eslint and for mobile compatibility
+type FSModule = typeof import('fs');
+type PathModule = typeof import('path');
+
+let fs: FSModule | null = null;
+let path: PathModule | null = null;
+
 if (Platform.isDesktop) {
   try {
-    fs = require('fs');
-  } catch (e) {
-    console.warn('Could not load fs module:', e);
+    // Use dynamic require for external file reading (desktop-only feature)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    fs = (window as unknown as { require: NodeRequire }).require('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    path = (window as unknown as { require: NodeRequire }).require('path');
+  } catch {
+    // Modules not available
+    console.warn('Node.js fs/path modules not available');
   }
 }
 

@@ -163,7 +163,7 @@ export class StandardMCPClient {
             headers['MCP-Protocol-Version'] = this.protocolVersion;
         }
 
-        console.log(`[MCP] Sending ${method} request to ${this.baseUrl}:`, JSON.stringify(request));
+        console.debug(`[MCP] Sending ${method} request to ${this.baseUrl}:`, JSON.stringify(request));
 
         try {
             const response = await requestUrl({
@@ -177,7 +177,7 @@ export class StandardMCPClient {
             const responseSessionId = response.headers?.['mcp-session-id'];
             if (responseSessionId) {
                 this.sessionId = responseSessionId;
-                console.log(`[MCP] Received session ID: ${this.sessionId}`);
+                console.debug(`[MCP] Received session ID: ${this.sessionId}`);
             }
 
             return this.parseResponse<T>(response);
@@ -193,7 +193,7 @@ export class StandardMCPClient {
     private parseResponse<T>(response: RequestUrlResponse): T {
         const contentType = response.headers?.['content-type'] || '';
 
-        console.log(`[MCP] Response status: ${response.status}, content-type: ${contentType}`);
+        console.debug(`[MCP] Response status: ${response.status}, content-type: ${contentType}`);
 
         if (contentType.includes('text/event-stream')) {
             // Parse SSE response
@@ -231,7 +231,7 @@ export class StandardMCPClient {
                     }
                 } catch (e) {
                     // Not valid JSON, might be a notification or other message
-                    console.log(`[MCP] Skipping non-JSON SSE line: ${data}`);
+                    console.debug(`[MCP] Skipping non-JSON SSE line: ${data}`);
                 }
             }
         }
@@ -249,11 +249,11 @@ export class StandardMCPClient {
      */
     async initialize(): Promise<void> {
         if (this.initialized) {
-            console.log('[MCP] Already initialized');
+            console.debug('[MCP] Already initialized');
             return;
         }
 
-        console.log(`[MCP] Initializing connection to ${this.config.name} at ${this.baseUrl}`);
+        console.debug(`[MCP] Initializing connection to ${this.config.name} at ${this.baseUrl}`);
 
         const params: MCPInitializeParams = {
             protocolVersion: this.protocolVersion,
@@ -269,11 +269,11 @@ export class StandardMCPClient {
         try {
             const result = await this.sendRequest<MCPInitializeResult>('initialize', params as unknown as Record<string, unknown>);
 
-            console.log(`[MCP] Initialized with server: ${result.serverInfo.name} v${result.serverInfo.version}`);
-            console.log(`[MCP] Server capabilities:`, result.capabilities);
+            console.debug(`[MCP] Initialized with server: ${result.serverInfo.name} v${result.serverInfo.version}`);
+            console.debug(`[MCP] Server capabilities:`, result.capabilities);
 
             if (result.instructions) {
-                console.log(`[MCP] Server instructions: ${result.instructions}`);
+                console.debug(`[MCP] Server instructions: ${result.instructions}`);
             }
 
             // Update protocol version to match server's
@@ -283,7 +283,7 @@ export class StandardMCPClient {
             // Send initialized notification
             await this.sendNotification('notifications/initialized');
 
-            console.log(`[MCP] Connection established successfully`);
+            console.debug(`[MCP] Connection established successfully`);
         } catch (error) {
             console.error(`[MCP] Initialization failed:`, error);
             throw error;
@@ -318,7 +318,7 @@ export class StandardMCPClient {
         } catch (error) {
             // Notifications may return 202 Accepted with no body, which might throw
             // We ignore these errors
-            console.log(`[MCP] Notification ${method} sent`);
+            console.debug(`[MCP] Notification ${method} sent`);
         }
     }
 
@@ -330,13 +330,13 @@ export class StandardMCPClient {
             await this.initialize();
         }
 
-        console.log(`[MCP] Fetching tools from ${this.config.name}`);
+        console.debug(`[MCP] Fetching tools from ${this.config.name}`);
 
         try {
             const result = await this.sendRequest<MCPToolsListResult>('tools/list', {});
             this.cachedTools = result.tools || [];
 
-            console.log(`[MCP] Received ${this.cachedTools.length} tools:`,
+            console.debug(`[MCP] Received ${this.cachedTools.length} tools:`,
                 this.cachedTools.map(t => t.name).join(', '));
 
             return this.cachedTools;
@@ -354,7 +354,7 @@ export class StandardMCPClient {
             await this.initialize();
         }
 
-        console.log(`[MCP] Executing tool ${name} with args:`, args);
+        console.debug(`[MCP] Executing tool ${name} with args:`, args);
 
         try {
             const result = await this.sendRequest<MCPToolCallResult>('tools/call', {

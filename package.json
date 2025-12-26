@@ -18,9 +18,13 @@
   "author": "Maxime Fournes",
   "license": "MIT",
   "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.6.1",
     "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.50.1",
+    "@typescript-eslint/parser": "^8.50.1",
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.19.0",
+    "eslint": "^9.39.2",
     "obsidian": "^1.5.0",
     "typescript": "^5.3.0"
   }

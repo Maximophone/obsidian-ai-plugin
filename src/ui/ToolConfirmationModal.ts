@@ -51,34 +51,34 @@ function formatParamValue(name: string, value: unknown): { type: 'code' | 'path'
   if (typeof value === 'boolean') {
     return { type: 'boolean', display: value ? 'Yes' : 'No' };
   }
-  
+
   if (typeof value === 'number') {
     return { type: 'text', display: String(value) };
   }
-  
+
   if (typeof value === 'string') {
     // Check if it's a path
     const pathNames = ['path', 'filepath', 'source', 'destination', 'directory', 'folder', 'file'];
     if (pathNames.some(p => name.toLowerCase().includes(p)) || value.startsWith('/') || value.startsWith('~')) {
       return { type: 'path', display: value };
     }
-    
+
     // Check if it's code or multi-line content
     const codeNames = ['code', 'content', 'body', 'script', 'command', 'query'];
     if (codeNames.some(p => name.toLowerCase().includes(p)) || value.includes('\n') || looksLikeCode(value)) {
       const language = detectLanguage(value, name);
       return { type: 'code', display: value, language };
     }
-    
+
     // Regular string
     return { type: 'text', display: value };
   }
-  
+
   // Objects and arrays - show as formatted JSON
   if (typeof value === 'object' && value !== null) {
     return { type: 'json', display: JSON.stringify(value, null, 2) };
   }
-  
+
   return { type: 'text', display: String(value) };
 }
 
@@ -102,25 +102,25 @@ export class ToolConfirmationModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
-    
+
     // Add modal class for styling
     this.modalEl.addClass('tool-confirmation-modal');
-    
+
     // Title
-    contentEl.createEl('h2', { 
-      text: '🔒 Tool Confirmation Required',
+    contentEl.createEl('h2', {
+      text: '🔒 Tool confirmation required',
       cls: 'tool-confirmation-title'
     });
 
     // Tool name with icon based on tool type
     const toolIcon = this.getToolIcon(this.toolCall.name);
-    contentEl.createEl('h3', { 
+    contentEl.createEl('h3', {
       text: `${toolIcon} ${this.formatToolName(this.toolCall.name)}`,
       cls: 'tool-confirmation-name'
     });
 
     // Description
-    contentEl.createEl('p', { 
+    contentEl.createEl('p', {
       text: this.toolDescription,
       cls: 'tool-confirmation-description'
     });
@@ -147,7 +147,7 @@ export class ToolConfirmationModal extends Modal {
             this.feedbackText = value;
           });
         text.inputEl.rows = 3;
-        text.inputEl.style.width = '100%';
+        text.inputEl.addClass('tool-confirmation-feedback');
       });
 
     // Buttons container
@@ -171,9 +171,9 @@ export class ToolConfirmationModal extends Modal {
       cls: 'tool-confirmation-reject'
     });
     rejectBtn.addEventListener('click', () => {
-      this.resolve({ 
-        approved: false, 
-        feedback: this.feedbackText || undefined 
+      this.resolve({
+        approved: false,
+        feedback: this.feedbackText || undefined
       });
       this.close();
     });
@@ -184,7 +184,7 @@ export class ToolConfirmationModal extends Modal {
    */
   private renderArguments(container: HTMLElement): void {
     const args = this.toolCall.arguments;
-    
+
     if (!args || Object.keys(args).length === 0) {
       container.createEl('p', { text: 'No arguments', cls: 'tool-confirmation-no-args' });
       return;
@@ -194,44 +194,47 @@ export class ToolConfirmationModal extends Modal {
 
     for (const [name, value] of Object.entries(args)) {
       const formatted = formatParamValue(name, value);
-      
+
       const argEl = argsContainer.createEl('div', { cls: 'tool-arg' });
-      
+
       // Argument name/label
       const labelEl = argEl.createEl('div', { cls: 'tool-arg-label' });
-      labelEl.createEl('span', { 
+      labelEl.createEl('span', {
         text: this.formatParamName(name),
         cls: 'tool-arg-name'
       });
-      
+
       // Value based on type
       switch (formatted.type) {
         case 'code':
           this.renderCodeBlock(argEl, formatted.display, formatted.language);
           break;
-          
-        case 'path':
+
+        case 'path': {
           const pathEl = argEl.createEl('div', { cls: 'tool-arg-path' });
           pathEl.createEl('code', { text: formatted.display });
           break;
-          
-        case 'boolean':
+        }
+
+        case 'boolean': {
           const boolEl = argEl.createEl('div', { cls: 'tool-arg-boolean' });
-          boolEl.createEl('span', { 
+          boolEl.createEl('span', {
             text: formatted.display,
             cls: formatted.display === 'Yes' ? 'bool-yes' : 'bool-no'
           });
           break;
-          
+        }
+
         case 'json':
           this.renderCodeBlock(argEl, formatted.display, 'json');
           break;
-          
+
         case 'text':
-        default:
+        default: {
           const textEl = argEl.createEl('div', { cls: 'tool-arg-text' });
           textEl.createEl('span', { text: formatted.display });
           break;
+        }
       }
     }
   }
@@ -241,21 +244,21 @@ export class ToolConfirmationModal extends Modal {
    */
   private renderCodeBlock(container: HTMLElement, code: string, language?: string): void {
     const codeContainer = container.createEl('div', { cls: 'tool-arg-code' });
-    
+
     // Language badge if known
     if (language && language !== 'text') {
-      codeContainer.createEl('span', { 
+      codeContainer.createEl('span', {
         text: language,
         cls: 'code-language-badge'
       });
     }
-    
+
     const pre = codeContainer.createEl('pre');
     const codeEl = pre.createEl('code');
-    
+
     // Actually display the code with proper newlines (not escaped)
     codeEl.textContent = code;
-    
+
     // Add line numbers for multi-line code
     const lines = code.split('\n');
     if (lines.length > 1) {

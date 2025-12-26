@@ -248,10 +248,10 @@ export function createMCPClient(config: MCPServerConfig): IMCPClient {
   const transport = config.transport || 'legacy';
 
   if (transport === 'standard') {
-    console.log(`Creating standard MCP client for ${config.name}`);
+    console.debug(`Creating standard MCP client for ${config.name}`);
     return new StandardMCPClientAdapter(config);
   } else {
-    console.log(`Creating legacy MCP client for ${config.name}`);
+    console.debug(`Creating legacy MCP client for ${config.name}`);
     return new LegacyMCPClient(config);
   }
 }
@@ -308,7 +308,7 @@ export class MCPManager {
         const toolset = await createMCPToolset(client);
         if (toolset) {
           this.toolsets.set(config.name, toolset);
-          console.log(`MCP server ${config.name} registered with ${toolset.tools.length} tools`);
+          console.debug(`MCP server ${config.name} registered with ${toolset.tools.length} tools`);
         }
       } catch (error) {
         console.error(`Failed to create toolset for MCP server ${config.name}:`, error);

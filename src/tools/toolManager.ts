@@ -74,7 +74,7 @@ export class ToolManager {
           const toolset = this.mcpManager.getToolset(config.name);
           if (toolset) {
             this.registerToolset(toolset);
-            console.log(`MCP server ${config.name} registered with ${toolset.tools.length} tools`);
+            console.debug(`MCP server ${config.name} registered with ${toolset.tools.length} tools`);
           }
         } catch (error) {
           console.error(`Failed to initialize MCP server ${config.name}:`, error);

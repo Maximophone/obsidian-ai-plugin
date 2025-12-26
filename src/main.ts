@@ -1,5 +1,5 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView, Editor, Platform, FuzzySuggestModal, SuggestModal } from 'obsidian';
-import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, ModelConfig, AIProvider, DEFAULT_MODELS, MCPServerConfig } from './types';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, MarkdownView, Editor, Platform, FuzzySuggestModal } from 'obsidian';
+import { ObsidianAISettings, DEFAULT_SETTINGS, resolveModel, getAllModels, ModelConfig, AIProvider, DEFAULT_MODELS } from './types';
 import { processTags, hasTag } from './parser/tagParser';
 import { AIService } from './ai/aiService';
 import { BlockProcessor } from './processor/blockProcessor';
@@ -12,7 +12,7 @@ export default class ObsidianAIPlugin extends Plugin {
   toolManager: ToolManager;
 
   async onload() {
-    console.log('Loading Obsidian AI plugin');
+    console.debug('Loading Obsidian AI plugin');
 
     await this.loadSettings();
 
@@ -257,13 +257,13 @@ export default class ObsidianAIPlugin extends Plugin {
    */
   async initializeMCPServers(): Promise<void> {
     if (this.settings.mcpServers && this.settings.mcpServers.length > 0) {
-      console.log(`Initializing ${this.settings.mcpServers.length} MCP server(s)...`);
+      console.debug(`Initializing ${this.settings.mcpServers.length} MCP server(s)...`);
       await this.toolManager.initializeMCPServers(this.settings.mcpServers);
     }
   }
 
-  async onunload() {
-    console.log('Unloading Obsidian AI plugin');
+  onunload() {
+    console.debug('Unloading Obsidian AI plugin');
   }
 
   async loadSettings() {
@@ -644,13 +644,13 @@ class ObsidianAISettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h1', { text: 'Obsidian AI Settings' });
+    new Setting(containerEl).setName('Obsidian AI settings').setHeading();
 
     // API Keys section
-    containerEl.createEl('h2', { text: 'API Keys' });
+    new Setting(containerEl).setName('API keys').setHeading();
 
     new Setting(containerEl)
-      .setName('Anthropic API Key')
+      .setName('Anthropic API key')
       .setDesc('Your Claude API key from console.anthropic.com')
       .addText(text => text
         .setPlaceholder('sk-ant-...')
@@ -662,7 +662,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('OpenAI API Key')
+      .setName('OpenAI API key')
       .setDesc('Your OpenAI API key from platform.openai.com')
       .addText(text => text
         .setPlaceholder('sk-...')
@@ -674,7 +674,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Google AI API Key')
+      .setName('Google AI API key')
       .setDesc('Your Google AI API key from aistudio.google.com')
       .addText(text => text
         .setPlaceholder('...')
@@ -686,7 +686,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('DeepSeek API Key')
+      .setName('DeepSeek API key')
       .setDesc('Your DeepSeek API key from platform.deepseek.com')
       .addText(text => text
         .setPlaceholder('sk-...')
@@ -698,7 +698,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Perplexity API Key')
+      .setName('Perplexity API key')
       .setDesc('Your Perplexity API key from perplexity.ai')
       .addText(text => text
         .setPlaceholder('pplx-...')
@@ -710,10 +710,10 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     // Defaults section
-    containerEl.createEl('h2', { text: 'Defaults' });
+    new Setting(containerEl).setName('Defaults').setHeading();
 
     new Setting(containerEl)
-      .setName('Default Model')
+      .setName('Default model')
       .setDesc('Model alias to use by default (e.g., sonnet, gpt4, gemini)')
       .addText(text => text
         .setPlaceholder('sonnet')
@@ -725,7 +725,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Default Temperature')
+      .setName('Default temperature')
       .setDesc('Response randomness (0 = deterministic, 1 = creative)')
       .addSlider(slider => slider
         .setLimits(0, 1, 0.1)
@@ -738,7 +738,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Default Max Tokens')
+      .setName('Default max tokens')
       .setDesc('Maximum response length')
       .addText(text => text
         .setValue(String(this.plugin.settings.defaultMaxTokens))
@@ -752,10 +752,10 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     // Behavior section
-    containerEl.createEl('h2', { text: 'Behavior' });
+    new Setting(containerEl).setName('Behavior').setHeading();
 
     new Setting(containerEl)
-      .setName('Auto-process on save')
+      .setName('Process AI blocks on save')
       .setDesc('Automatically process AI blocks when you save a file')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.autoProcess)
@@ -799,7 +799,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     // Appearance section
-    containerEl.createEl('h2', { text: 'Appearance' });
+    new Setting(containerEl).setName('Appearance').setHeading();
 
     new Setting(containerEl)
       .setName('Chat skin')
@@ -815,7 +815,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     // Folders section
-    containerEl.createEl('h2', { text: 'Folders' });
+    new Setting(containerEl).setName('Folders').setHeading();
 
     new Setting(containerEl)
       .setName('Prompts folder')
@@ -829,7 +829,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
       );
 
     // Models section
-    containerEl.createEl('h2', { text: 'Available Models' });
+    new Setting(containerEl).setName('Available models').setHeading();
 
     containerEl.createEl('p', {
       text: 'Built-in model aliases. Use these in <model!alias> tags.',
@@ -853,7 +853,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
     }
 
     // Custom models section
-    containerEl.createEl('h3', { text: 'Custom Models' });
+    new Setting(containerEl).setName('Custom models').setHeading();
     containerEl.createEl('p', {
       text: 'Add your own model aliases. These override built-in models with the same alias.',
       cls: 'setting-item-description'
@@ -900,8 +900,8 @@ class ObsidianAISettingsTab extends PluginSettingTab {
         .addOption('deepseek', 'DeepSeek')
         .addOption('perplexity', 'Perplexity')
         .setValue(model.provider)
-        .onChange(async (value: AIProvider) => {
-          this.plugin.settings.customModels[i].provider = value;
+        .onChange(async (value) => {
+          this.plugin.settings.customModels[i].provider = value as AIProvider;
           await this.plugin.saveSettings();
         })
       );
@@ -927,7 +927,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
     }
 
     // ========== MCP Servers section ==========
-    containerEl.createEl('h2', { text: 'MCP Servers' });
+    new Setting(containerEl).setName('MCP servers').setHeading();
 
     containerEl.createEl('p', {
       text: 'Connect to external MCP (Model Context Protocol) servers to add more tools. These servers run separately and provide tools like filesystem access, shell commands, etc.',
@@ -956,7 +956,7 @@ class ObsidianAISettingsTab extends PluginSettingTab {
     // Refresh all servers button
     if (this.plugin.settings.mcpServers.length > 0) {
       new Setting(containerEl)
-        .setName('Refresh MCP Connections')
+        .setName('Refresh MCP connections')
         .setDesc('Reconnect to all MCP servers and refresh tool definitions')
         .addButton(button => button
           .setButtonText('🔄 Refresh')
