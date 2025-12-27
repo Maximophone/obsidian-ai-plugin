@@ -1,6 +1,6 @@
 {
   "name": "obsidian-ai-plugin",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AI capabilities directly in your Obsidian notes",
   "main": "main.js",
   "scripts": {

@@ -68,6 +68,7 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
 
 /**
  * Extract raw wikilinks from text that are NOT already inside tags
+ * and are only in USER message portions (not AI responses).
  * Returns array of link targets (without the [[ and ]])
  */
 function extractRawWikilinks(text: string): string[] {
@@ -75,12 +76,29 @@ function extractRawWikilinks(text: string): string[] {
   // This regex matches <tagname!...> patterns including wikilinks inside them
   const textWithoutTags = text.replace(/<[a-z][a-z0-9_]*!(?:"[^"]*"|[^>])*>/gi, '');
 
-  // Now find all wikilinks in the remaining text
+  // Extract only user message portions (exclude AI responses between |AI| and |ME|)
+  // User content is: everything before first |AI|, and everything after each |ME| until the next |AI|
+  let userOnlyText = '';
+  const parts = textWithoutTags.split(new RegExp(`(${escapeRegex(BEACON.AI)}|${escapeRegex(BEACON.ME)})`));
+
+  let inAiResponse = false;
+  for (const part of parts) {
+    if (part === BEACON.AI) {
+      inAiResponse = true;
+    } else if (part === BEACON.ME) {
+      inAiResponse = false;
+    } else if (!inAiResponse) {
+      // This is user content
+      userOnlyText += part;
+    }
+  }
+
+  // Now find all wikilinks in user-only text
   const wikilinks: string[] = [];
   const pattern = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
   let match: RegExpExecArray | null;
 
-  while ((match = pattern.exec(textWithoutTags)) !== null) {
+  while ((match = pattern.exec(userOnlyText)) !== null) {
     const linkTarget = match[1].trim();
     if (linkTarget && !wikilinks.includes(linkTarget)) {
       wikilinks.push(linkTarget);
