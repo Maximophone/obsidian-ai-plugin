@@ -66,11 +66,16 @@ export interface ThinkingConfig {
 // Models that support extended thinking
 export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'> = {
   // Claude - full thinking visibility
+  'claude-3-7-sonnet-20250219': 'full',
+  'claude-3-7-sonnet-latest': 'full',
   'claude-sonnet-4-20250514': 'full',
   'claude-sonnet-4-5-20250929': 'full',
+  'claude-sonnet-4-6': 'full',
   'claude-opus-4-20250514': 'full',
   'claude-opus-4-1-20250805': 'full',
   'claude-opus-4-5-20251101': 'full',
+  'claude-opus-4-6': 'full',
+  'claude-haiku-4-5-20251001': 'full',
   
   // OpenAI o-series - hidden reasoning (only token count)
   'o1': 'hidden',
@@ -174,10 +179,13 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'sonnet3.7', provider: 'anthropic', modelId: 'claude-3-7-sonnet-latest', displayName: 'Claude 3.7 Sonnet' },
   { alias: 'sonnet4', provider: 'anthropic', modelId: 'claude-sonnet-4-20250514', displayName: 'Claude Sonnet 4' },
   { alias: 'sonnet4.5', provider: 'anthropic', modelId: 'claude-sonnet-4-5-20250929', displayName: 'Claude Sonnet 4.5' },
+  { alias: 'sonnet4.6', provider: 'anthropic', modelId: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6' },
   { alias: 'opus3', provider: 'anthropic', modelId: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus' },
   { alias: 'opus4', provider: 'anthropic', modelId: 'claude-opus-4-20250514', displayName: 'Claude Opus 4' },
   { alias: 'opus4.1', provider: 'anthropic', modelId: 'claude-opus-4-1-20250805', displayName: 'Claude Opus 4.1' },
   { alias: 'opus4.5', provider: 'anthropic', modelId: 'claude-opus-4-5-20251101', displayName: 'Claude Opus 4.5' },
+  { alias: 'opus4.6', provider: 'anthropic', modelId: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
+  { alias: 'haiku4.5', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5' },
   
   // ===== OpenAI =====
   { alias: 'gpt3.5', provider: 'openai', modelId: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo' },
