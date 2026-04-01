@@ -162,9 +162,16 @@ export class AIService {
       log(`**Model thinking capability:** ${thinkingCapability || 'unknown'}`);
       
       if (thinkingCapability === 'full') {
+        const budgetTokens = options.thinking.budgetTokens || 10000;
+        const maxTokens = body.max_tokens as number;
+        // budget_tokens must be less than max_tokens - auto-increase max_tokens if needed
+        if (maxTokens <= budgetTokens) {
+          body.max_tokens = budgetTokens + maxTokens;
+          log(`**Max tokens increased:** ${maxTokens} → ${body.max_tokens} (must exceed thinking budget)`);
+        }
         body.thinking = {
           type: 'enabled',
-          budget_tokens: options.thinking.budgetTokens || 10000,
+          budget_tokens: budgetTokens,
         };
         // When thinking is enabled, temperature must be 1 for Claude
         body.temperature = 1;
