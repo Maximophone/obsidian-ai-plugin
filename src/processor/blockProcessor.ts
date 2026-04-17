@@ -706,6 +706,7 @@ export class BlockProcessor {
     toolExecutions?: Array<{ name: string; args: Record<string, unknown>; result: string; aiMessage?: string }>;
     inputTokens?: number;
     outputTokens?: number;
+    stopReason?: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence';
     debugLog?: string[];
   }> {
     const debugLog: string[] = [];
@@ -718,6 +719,7 @@ export class BlockProcessor {
     let totalOutputTokens = 0;
     let finalContent = '';
     let finalThinking = '';
+    let finalStopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence' | undefined;
 
     // Clone messages to avoid modifying original
     const conversationMessages = [...messages];
@@ -741,6 +743,7 @@ export class BlockProcessor {
       // If no tool calls, we're done
       if (!response.toolCalls || response.toolCalls.length === 0) {
         finalContent = response.content;
+        finalStopReason = response.stopReason;
         break;
       }
 
@@ -884,6 +887,7 @@ export class BlockProcessor {
       toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
+      stopReason: finalStopReason,
       debugLog: debugLog.length > 0 ? debugLog : undefined,
     };
   }
@@ -1111,8 +1115,20 @@ Step 3: Finally, I select the best solution...`;
         debugBlock = `\n---\n### Debug Log\n${response.debugLog.join('\n')}\n---\n`;
       }
 
-      // Order: tokens -> thinking -> tools -> final response -> debug
-      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${toolsBlock}${escapedResponse}${debugBlock}\n${BEACON.ME}\n`;
+      // Surface max_tokens stop reason — otherwise the user just sees an empty
+      // (or truncated) response, which is especially confusing with adaptive
+      // thinking where the model can burn all output tokens thinking.
+      let stopReasonBlock = '';
+      if (response.stopReason === 'max_tokens') {
+        const bareThinking = !escapedResponse.trim() && !!response.thinking;
+        const msg = bareThinking
+          ? `⚠️ **Response truncated:** hit \`max_tokens\` during thinking — no text was produced. Lower the effort level (\`<think!medium>\`) or raise \`<max_tokens!N>\` and retry.`
+          : `⚠️ **Response truncated:** hit \`max_tokens\`. Raise \`<max_tokens!N>\` for a longer reply.`;
+        stopReasonBlock = `> [!warning]\n> ${msg}\n\n`;
+      }
+
+      // Order: tokens -> thinking -> tools -> stop-reason warning -> final response -> debug
+      const newBlock = `${blockWithoutReply}${BEACON.AI}\n${tokenInfo}${thinkingBlock}${toolsBlock}${stopReasonBlock}${escapedResponse}${debugBlock}\n${BEACON.ME}\n`;
 
       // Play notification sound if enabled
       if (this.plugin.settings.playNotificationSound) {
