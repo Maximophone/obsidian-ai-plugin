@@ -58,10 +58,44 @@ export interface AIResponse {
 }
 
 // Thinking configuration for AI requests
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'max';
+
 export interface ThinkingConfig {
   enabled: boolean;
-  budgetTokens?: number;  // Optional token budget for thinking
+  level?: ThinkingLevel;   // Named effort level (preferred, cross-provider)
+  budgetTokens?: number;   // Explicit token budget (legacy / advanced override)
 }
+
+export const THINKING_LEVELS: ThinkingLevel[] = ['low', 'medium', 'high', 'max'];
+
+// Level → budget mapping used when a level is given but the provider expects a raw budget
+// (older Claude models, Gemini). Values chosen to roughly match Anthropic's adaptive tiers.
+export const THINKING_LEVEL_BUDGETS: Record<ThinkingLevel, number> = {
+  low: 4000,
+  medium: 10000,
+  high: 24000,
+  max: 64000,
+};
+
+export function levelToBudget(level: ThinkingLevel): number {
+  return THINKING_LEVEL_BUDGETS[level];
+}
+
+export function budgetToLevel(budget: number): ThinkingLevel {
+  if (budget <= 6000) return 'low';
+  if (budget <= 16000) return 'medium';
+  if (budget <= 40000) return 'high';
+  return 'max';
+}
+
+// Anthropic models that require (or default to) adaptive thinking.
+// On these models `{ type: "enabled", budget_tokens }` is either rejected (Opus 4.7)
+// or deprecated (Opus 4.6, Sonnet 4.6).
+export const ANTHROPIC_ADAPTIVE_MODELS: Set<string> = new Set([
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+]);
 
 // Models that support extended thinking
 export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'> = {
@@ -75,6 +109,7 @@ export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'>
   'claude-opus-4-1-20250805': 'full',
   'claude-opus-4-5-20251101': 'full',
   'claude-opus-4-6': 'full',
+  'claude-opus-4-7': 'full',
   'claude-haiku-4-5-20251001': 'full',
   
   // OpenAI o-series - hidden reasoning (only token count)
@@ -185,6 +220,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'opus4.1', provider: 'anthropic', modelId: 'claude-opus-4-1-20250805', displayName: 'Claude Opus 4.1' },
   { alias: 'opus4.5', provider: 'anthropic', modelId: 'claude-opus-4-5-20251101', displayName: 'Claude Opus 4.5' },
   { alias: 'opus4.6', provider: 'anthropic', modelId: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
+  { alias: 'opus4.7', provider: 'anthropic', modelId: 'claude-opus-4-7', displayName: 'Claude Opus 4.7' },
   { alias: 'haiku4.5', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5' },
   
   // ===== OpenAI =====
@@ -238,7 +274,7 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   deepseekApiKey: '',
   perplexityApiKey: '',
   
-  defaultModel: 'sonnet4',  // Same default as ai_engine
+  defaultModel: 'opus4.7',  // Latest Claude Opus model
   defaultTemperature: 0.7,
   defaultMaxTokens: 4096,
   

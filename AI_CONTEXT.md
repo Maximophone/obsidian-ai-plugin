@@ -66,7 +66,7 @@ When the file is saved, the plugin:
 | `<url!"https://...">` | Fetch webpage content | `<url!"https://example.com">` |
 | `<prompt!"name">` | Load prompt from prompts folder | `<prompt!"coding">` |
 | `<this!>` | Include current document | `<this!>` |
-| `<think!>` or `<think!10000>` | Extended thinking mode | `<think!50000>` |
+| `<think!>`, `<think!low\|medium\|high\|max>`, or `<think!10000>` | Extended thinking mode | `<think!high>` |
 | `<debug!>` | Show detailed API logs | `<debug!>` |
 | `<mock!>` | Echo request without API call | `<mock!>` |
 | `<tools!obsidian>` | Enable tool use | `<tools!obsidian>` |
@@ -79,9 +79,10 @@ When the file is saved, the plugin:
 ## AI Providers Supported
 
 ### Anthropic (Claude)
-- Models: claude-sonnet-4-5, claude-sonnet-4, claude-opus-4, etc.
-- Aliases: sonnet45, sonnet4, opus4, haiku
-- Supports: Vision, PDFs, Extended Thinking, Tool Use
+- Models: claude-opus-4-7 (default), claude-opus-4-6, claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4, etc.
+- Aliases: opus4.7, opus4.6, sonnet4.6, sonnet4.5, sonnet4, opus4, haiku, haiku4.5
+- Supports: Vision, PDFs, Extended Thinking (adaptive on 4.6+, manual on 4.5 and earlier), Tool Use
+- **Thinking mode**: Opus 4.7 / Opus 4.6 / Sonnet 4.6 use `thinking: {type: "adaptive"}` + `output_config.effort`. Older models use `thinking: {type: "enabled", budget_tokens}`.
 
 ### OpenAI (GPT)
 - Models: gpt-4o, gpt-4-turbo, gpt-5.1, gpt-5.2, o1, o3, etc.

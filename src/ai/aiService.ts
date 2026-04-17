@@ -3,7 +3,7 @@
  */
 
 import { requestUrl, RequestUrlParam } from 'obsidian';
-import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, THINKING_CAPABLE_MODELS, AIToolCall } from '../types';
+import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, ThinkingLevel, THINKING_CAPABLE_MODELS, ANTHROPIC_ADAPTIVE_MODELS, levelToBudget, budgetToLevel, AIToolCall } from '../types';
 import { ToolDefinition, toolsToAnthropicFormat, toolsToOpenAIFormat, toolsToGoogleFormat } from '../tools';
 import type ObsidianAIPlugin from '../main';
 
@@ -155,14 +155,36 @@ export class AIService {
     };
     
     // Handle extended thinking
+    let useAdaptive = false;
     if (options.thinking?.enabled) {
       // Check if model supports thinking
       const thinkingCapability = THINKING_CAPABLE_MODELS[model];
-      log(`**Thinking requested:** yes (budget: ${options.thinking.budgetTokens || 10000})`);
+      useAdaptive = ANTHROPIC_ADAPTIVE_MODELS.has(model);
+      log(`**Thinking requested:** yes (level: ${options.thinking.level ?? 'default'}, budget: ${options.thinking.budgetTokens ?? 'n/a'})`);
       log(`**Model thinking capability:** ${thinkingCapability || 'unknown'}`);
-      
-      if (thinkingCapability === 'full') {
-        const budgetTokens = options.thinking.budgetTokens || 10000;
+      log(`**Thinking mode:** ${useAdaptive ? 'adaptive' : 'manual (enabled)'}`);
+
+      if (useAdaptive) {
+        // Adaptive thinking (Opus 4.7, Opus 4.6, Sonnet 4.6).
+        // Opus 4.7 rejects type:"enabled" entirely; on 4.6 models it's deprecated.
+        // Effort is passed via output_config. If the user supplied a raw budget
+        // (legacy), map it back to the closest effort level.
+        const effort: ThinkingLevel | undefined = options.thinking.level
+          ?? (options.thinking.budgetTokens ? budgetToLevel(options.thinking.budgetTokens) : undefined);
+
+        body.thinking = { type: 'adaptive', display: 'summarized' };
+        if (effort) {
+          body.output_config = { effort };
+          log(`**Effort:** ${effort}`);
+        } else {
+          log(`**Effort:** (unset, API default 'high')`);
+        }
+        // Temperature must be 1 whenever thinking is active on Claude.
+        body.temperature = 1;
+      } else if (thinkingCapability === 'full') {
+        // Manual thinking on older Claude models (Sonnet 4.5 and earlier, Haiku 4.5, etc.)
+        const budgetTokens = options.thinking.budgetTokens
+          ?? (options.thinking.level ? levelToBudget(options.thinking.level) : 10000);
         const maxTokens = body.max_tokens as number;
         // budget_tokens must be less than max_tokens - auto-increase max_tokens if needed
         if (maxTokens <= budgetTokens) {
@@ -173,10 +195,12 @@ export class AIService {
           type: 'enabled',
           budget_tokens: budgetTokens,
         };
+        log(`**Budget tokens:** ${budgetTokens}`);
         // When thinking is enabled, temperature must be 1 for Claude
         body.temperature = 1;
       } else {
         log(`**Warning:** Model may not support extended thinking`);
+        body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
       }
     } else {
       body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
@@ -204,8 +228,9 @@ export class AIService {
       'anthropic-version': '2023-06-01',
     };
     
-    // Extended thinking requires the interleaved-thinking beta header
-    if (options.thinking?.enabled && body.thinking) {
+    // Manual extended thinking requires the interleaved-thinking beta header.
+    // Adaptive thinking enables interleaved thinking automatically — no header needed.
+    if (options.thinking?.enabled && body.thinking && !useAdaptive) {
       headers['anthropic-beta'] = 'interleaved-thinking-2025-05-14';
       log(`**Beta header:** interleaved-thinking-2025-05-14`);
     }
@@ -260,8 +285,9 @@ export class AIService {
       if (block.type === 'text') {
         content += block.text;
       } else if (block.type === 'thinking') {
-        thinking += block.thinking;
-        log(`**Thinking block received:** ${block.thinking.length} chars`);
+        const text = typeof block.thinking === 'string' ? block.thinking : '';
+        thinking += text;
+        log(`**Thinking block received:** ${text.length} chars${text.length === 0 ? ' (empty — display may be omitted or model skipped thinking)' : ''}`);
       } else if (block.type === 'tool_use') {
         toolCalls.push({
           id: block.id,
@@ -422,10 +448,13 @@ export class AIService {
       // o-series and GPT-5.x models use max_completion_tokens instead of max_tokens
       body.max_completion_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
       
-      // Add reasoning effort if thinking is enabled (o-series only)
+      // Add reasoning effort if thinking is enabled (o-series only).
+      // OpenAI accepts 'low' | 'medium' | 'high'. Map our 'max' → 'high'.
       if (isReasoningModel && options.thinking?.enabled) {
-        body.reasoning_effort = 'high';
-        log(`**Reasoning effort:** high`);
+        const level = options.thinking.level;
+        const effort = level === 'max' ? 'high' : (level ?? 'high');
+        body.reasoning_effort = effort;
+        log(`**Reasoning effort:** ${effort}`);
       }
       
       // GPT-5.x supports temperature, o-series doesn't
@@ -693,12 +722,17 @@ export class AIService {
       temperature: options.temperature ?? this.plugin.settings.defaultTemperature,
     };
     
-    // Add thinking budget if using thinking model
-    if (actualModel.includes('thinking') && options.thinking?.budgetTokens) {
-      generationConfig.thinkingConfig = {
-        thinkingBudget: options.thinking.budgetTokens,
-      };
-      log(`**Thinking budget:** ${options.thinking.budgetTokens}`);
+    // Add thinking budget if using thinking model. Gemini takes a raw token
+    // budget, so if the user gave us a level (no explicit budget), map it.
+    if (actualModel.includes('thinking') && options.thinking?.enabled) {
+      const budget = options.thinking.budgetTokens
+        ?? (options.thinking.level ? levelToBudget(options.thinking.level) : undefined);
+      if (budget) {
+        generationConfig.thinkingConfig = {
+          thinkingBudget: budget,
+        };
+        log(`**Thinking budget:** ${budget}`);
+      }
     }
     
     log(`**Max tokens:** ${generationConfig.maxOutputTokens}`);

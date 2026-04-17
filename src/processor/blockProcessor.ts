@@ -5,7 +5,7 @@
 
 import { TFile, Notice, Platform, requestUrl } from 'obsidian';
 import { processTags, Replacements, escapeTags, extractTags } from '../parser/tagParser';
-import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, AIToolResult } from '../types';
+import { AIMessage, BEACON, ProcessingContext, MessageContent, PDF_CAPABLE_PROVIDERS, resolveModel, ThinkingConfig, ThinkingLevel, THINKING_LEVELS, AIToolResult } from '../types';
 import { ToolDefinition } from '../tools';
 import { showToolConfirmation, ToolConfirmationResult } from '../ui/ToolConfirmationModal';
 import { getSkin } from '../skins';
@@ -982,6 +982,7 @@ export class BlockProcessor {
         mockContent += `temperature: ${params.temperature ?? this.plugin.settings.defaultTemperature}\n`;
         if (params.thinking) {
           mockContent += `thinking: enabled\n`;
+          mockContent += `thinking_level: ${params.thinking.level || 'auto'}\n`;
           mockContent += `thinking_budget_tokens: ${params.thinking.budgetTokens || 'auto'}\n`;
         }
         mockContent += '---PARAMETERS END---\n\n';
@@ -1014,8 +1015,11 @@ export class BlockProcessor {
         // Add mock thinking if enabled
         let thinkingBlock = '';
         if (params.thinking) {
+          const effortDesc = params.thinking.level
+            ? `effort level '${params.thinking.level}'`
+            : (params.thinking.budgetTokens ? `${params.thinking.budgetTokens} tokens` : 'auto');
           const mockThinking = `Mock reasoning: This is a simulated chain of thought from the mock wrapper.
-I would have used up to ${params.thinking.budgetTokens || 'auto'} tokens for this reasoning.
+I would have used ${effortDesc} for this reasoning.
 Step 1: First, I analyze the problem...
 Step 2: Then, I consider possible approaches...
 Step 3: Finally, I select the best solution...`;
@@ -1163,7 +1167,7 @@ Step 3: Finally, I select the best solution...`;
       temperature: (v) => { collectedTags.push({ name: 'temperature', value: v, text: null }); return ''; },
       max_tokens: (v) => { collectedTags.push({ name: 'max_tokens', value: v, text: null }); return ''; },
       tools: (v) => { collectedTags.push({ name: 'tools', value: v, text: null }); return ''; },
-      think: () => { collectedTags.push({ name: 'think', value: null, text: null }); return ''; },
+      think: (v) => { collectedTags.push({ name: 'think', value: v, text: null }); return ''; },
       inline: () => { collectedTags.push({ name: 'inline', value: null, text: null }); return ''; },
 
       // Context tags
@@ -1320,13 +1324,19 @@ Step 3: Finally, I select the best solution...`;
           params.debug = true;
           break;
         case 'think':
-          // <think!> or <think!16000> for custom budget
+          // <think!>              → enabled, no explicit level
+          // <think!low|medium|high|max> → effort level (preferred)
+          // <think!16000>         → legacy explicit budget_tokens
           const thinkingConfig: ThinkingConfig = { enabled: true };
           if (tag.value) {
-            const budget = parseInt(tag.value);
+            const raw = tag.value.trim().toLowerCase();
+            const budget = parseInt(raw, 10);
             if (!isNaN(budget) && budget > 0) {
               thinkingConfig.budgetTokens = budget;
+            } else if ((THINKING_LEVELS as string[]).includes(raw)) {
+              thinkingConfig.level = raw as ThinkingLevel;
             }
+            // Unknown values are ignored; <think!> stays enabled with no level/budget.
           }
           params.thinking = thinkingConfig;
           break;
@@ -1649,7 +1659,8 @@ Save the file, and the AI will respond where \`<REPLY!>\` was placed.
 - \`<SYSTEM!prompt_name>\` - Set system prompt (loads from Prompts folder)
 - \`<PROMPT!prompt_name>\` - Include prompt content inline (from Prompts folder)
 - \`<THINK!>\` - Enable extended thinking (Claude, o-series, Gemini)
-- \`<THINK!16000>\` - Enable thinking with custom token budget
+- \`<THINK!low|medium|high|max>\` - Enable thinking at a specific effort level
+- \`<THINK!16000>\` - Enable thinking with a custom token budget (legacy; older Claude / Gemini only)
 - \`<DEBUG!>\` - Show debug info
 - \`<MOCK!>\` - Echo what would be sent to AI (no API call, for debugging)
 - \`<TOOLS!obsidian>\` - Enable Obsidian vault tools
@@ -1682,12 +1693,18 @@ Enable extended thinking for complex reasoning tasks:
 
 \`\`\`
 <AI!>
-<MODEL!sonnet4>
-<THINK!>
+<MODEL!opus4.7>
+<THINK!high>
 Solve this step by step: What is 17 * 23 + 45 / 9?
 <REPLY!>
 </AI!>
 \`\`\`
+
+**Effort levels** (\`<THINK!low|medium|high|max>\`) map across providers:
+- Claude adaptive models (Opus 4.7, Opus 4.6, Sonnet 4.6): sent as \`output_config.effort\`
+- Older Claude (Sonnet 4.5 and earlier): mapped to \`budget_tokens\`
+- OpenAI o-series / GPT-5.x: sent as \`reasoning_effort\` (\`max\` maps to \`high\`)
+- Gemini thinking: mapped to \`thinkingBudget\`
 
 **Provider support:**
 - **Claude**: Full thinking visibility (shown in |THOUGHT| blocks)

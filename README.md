@@ -6,7 +6,7 @@ Add AI capabilities directly into your Obsidian notes. Write questions, referenc
 
 - **Native [[Links]]** — Just use `[[Note Name]]` to include document content—no special syntax needed
 - **5 AI Providers** — Anthropic (Claude), OpenAI (GPT), Google (Gemini), DeepSeek, Perplexity
-- **50+ Built-in Models** — From GPT-4o to Claude Opus 4.5, Gemini 3.0, and more
+- **50+ Built-in Models** — From GPT-4o to Claude Opus 4.7, Gemini 3.0, and more
 - **Vision Support** — Include images for visual AI models
 - **PDF Support** — Native PDF handling with Claude and Gemini
 - **Tool Use** — AI can read and create notes in your vault
@@ -312,17 +312,34 @@ Enable reasoning mode for complex problems:
 
 ```markdown
 <ai!>
-<model!sonnet4>
+<model!opus4.7>
 <think!>
 Solve this logic puzzle step by step...
 <reply!>
 </ai!>
 ```
 
-Specify a token budget for thinking:
+Pick an effort level (`low`, `medium`, `high`, `max`):
 
 ```markdown
 <ai!>
+<think!max>
+...
+</ai!>
+```
+
+Effort levels are translated for each provider:
+
+- **Claude adaptive** (Opus 4.7, Opus 4.6, Sonnet 4.6): sent as `output_config.effort`
+- **Older Claude** (Sonnet 4.5 and earlier): mapped to a `budget_tokens` value
+- **OpenAI** o-series / GPT-5.x: sent as `reasoning_effort` (`max` maps to `high`)
+- **Gemini** thinking models: mapped to `thinkingBudget`
+
+Advanced: you can still pass a raw token budget for providers that accept one:
+
+```markdown
+<ai!>
+<model!sonnet4.5>
 <think!50000>
 ...
 </ai!>
@@ -375,7 +392,7 @@ This will echo the request parameters.
 | `<url!"url">` | Fetch webpage | `<url!"https://...">` |
 | `<prompt!"name">` | Load saved prompt | `<prompt!"coding">` |
 | `<tools!name>` | Enable tool use | `<tools!obsidian>`, `<tools!mcp:exa>` |
-| `<think!>` | Extended thinking | `<think!50000>` |
+| `<think!>` | Extended thinking | `<think!max>` or `<think!50000>` |
 | `<debug!>` | Show API details | `<debug!>` |
 | `<mock!>` | Test without API | `<mock!>` |
 | `<inline!>` | Include all [[links]] (on by default) | `<inline!>` |
@@ -390,7 +407,7 @@ This will echo the request parameters.
 ## 🤖 Available Models
 
 ### Anthropic (Claude)
-`haiku`, `sonnet4`, `sonnet45`, `opus4`, `opus45`
+`haiku`, `haiku4.5`, `sonnet4`, `sonnet4.5`, `sonnet4.6`, `opus4`, `opus4.1`, `opus4.5`, `opus4.6`, `opus4.7` (default)
 
 ### OpenAI
 `gpt4o`, `gpt4turbo`, `gpt5`, `gpt5.1`, `gpt5.2`, `o1`, `o3`, `o4-mini`
