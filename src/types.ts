@@ -183,6 +183,10 @@ export interface ObsidianAISettings {
   defaultModel: string;  // Alias of the default model
   defaultTemperature: number;
   defaultMaxTokens: number;
+
+  // Global system prompt: always prepended to any per-request system prompt.
+  // Empty string disables it.
+  globalSystemPrompt: string;
   
   // Behavior
   autoProcess: boolean;
@@ -277,6 +281,8 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   defaultModel: 'opus4.7',  // Latest Claude Opus model
   defaultTemperature: 0.7,
   defaultMaxTokens: 4096,
+
+  globalSystemPrompt: '',
   
   autoProcess: true,
   showTokenCount: true,

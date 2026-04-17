@@ -959,10 +959,17 @@ export class BlockProcessor {
       const modelAlias = params.model || this.plugin.settings.defaultModel;
 
       // Get system prompt if specified
-      let systemPrompt: string | undefined;
+      let perTurnSystemPrompt: string | undefined;
       if (params.system) {
-        systemPrompt = await this.loadSystemPrompt(params.system);
+        perTurnSystemPrompt = await this.loadSystemPrompt(params.system);
       }
+
+      // Prepend the global system prompt (from settings) if non-empty.
+      // Global and per-turn are separated by a blank line when both exist.
+      const globalPrompt = this.plugin.settings.globalSystemPrompt?.trim() || '';
+      const systemPrompt: string | undefined = globalPrompt && perTurnSystemPrompt
+        ? `${globalPrompt}\n\n${perTurnSystemPrompt}`
+        : (globalPrompt || perTurnSystemPrompt || undefined);
 
       // Check if PDFs are used with unsupported model
       if (pdfs.length > 0) {

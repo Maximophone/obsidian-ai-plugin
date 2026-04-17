@@ -751,6 +751,21 @@ class ObsidianAISettingsTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName('Global system prompt')
+      .setDesc('Instructions prepended to every AI request, before any <system!> prompt. Leave empty to disable.')
+      .addTextArea(text => {
+        text
+          .setPlaceholder('e.g. "Always answer concisely. Use markdown."')
+          .setValue(this.plugin.settings.globalSystemPrompt)
+          .onChange(async (value) => {
+            this.plugin.settings.globalSystemPrompt = value;
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.rows = 6;
+        text.inputEl.style.width = '100%';
+      });
+
     // Behavior section
     new Setting(containerEl).setName('Behavior').setHeading();
 
