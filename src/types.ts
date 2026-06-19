@@ -92,6 +92,7 @@ export function budgetToLevel(budget: number): ThinkingLevel {
 // On these models `{ type: "enabled", budget_tokens }` is either rejected (Opus 4.7)
 // or deprecated (Opus 4.6, Sonnet 4.6).
 export const ANTHROPIC_ADAPTIVE_MODELS: Set<string> = new Set([
+  'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-opus-4-6',
   'claude-sonnet-4-6',
@@ -110,6 +111,7 @@ export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'>
   'claude-opus-4-5-20251101': 'full',
   'claude-opus-4-6': 'full',
   'claude-opus-4-7': 'full',
+  'claude-opus-4-8': 'full',
   'claude-haiku-4-5-20251001': 'full',
   
   // OpenAI o-series - hidden reasoning (only token count)
@@ -225,6 +227,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'opus4.5', provider: 'anthropic', modelId: 'claude-opus-4-5-20251101', displayName: 'Claude Opus 4.5' },
   { alias: 'opus4.6', provider: 'anthropic', modelId: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
   { alias: 'opus4.7', provider: 'anthropic', modelId: 'claude-opus-4-7', displayName: 'Claude Opus 4.7' },
+  { alias: 'opus4.8', provider: 'anthropic', modelId: 'claude-opus-4-8', displayName: 'Claude Opus 4.8' },
   { alias: 'haiku4.5', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5' },
   
   // ===== OpenAI =====
@@ -278,7 +281,7 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   deepseekApiKey: '',
   perplexityApiKey: '',
   
-  defaultModel: 'opus4.7',  // Latest Claude Opus model
+  defaultModel: 'opus4.8',  // Latest Claude Opus model
   defaultTemperature: 0.7,
   defaultMaxTokens: 4096,
 
