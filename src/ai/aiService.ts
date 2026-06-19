@@ -7,6 +7,24 @@ import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageCo
 import { ToolDefinition, toolsToAnthropicFormat, toolsToOpenAIFormat, toolsToGoogleFormat } from '../tools';
 import type ObsidianAIPlugin from '../main';
 
+/**
+ * Pull a human-readable message out of a JSON API error body.
+ * Most providers (Anthropic, OpenAI, DeepSeek, Perplexity) return
+ * `{ "error": { "message": "..." } }`. Falls back to the raw body so we
+ * never hide information — better a noisy message than a bare status code.
+ */
+export function extractApiErrorMessage(responseText: string): string {
+  if (!responseText) return '(empty response body)';
+  try {
+    const json = JSON.parse(responseText);
+    const msg = json?.error?.message ?? json?.message ?? json?.error;
+    if (typeof msg === 'string' && msg.length > 0) return msg;
+  } catch {
+    // Not JSON - return the raw text below
+  }
+  return responseText;
+}
+
 export class AIService {
   private plugin: ObsidianAIPlugin;
   
@@ -179,8 +197,9 @@ export class AIService {
         } else {
           log(`**Effort:** (unset, API default 'high')`);
         }
-        // Temperature must be 1 whenever thinking is active on Claude.
-        body.temperature = 1;
+        // Adaptive-thinking models (Opus 4.7/4.8, etc.) reject `temperature`
+        // entirely (400). Leave it unset — do NOT send a sampling parameter.
+        log(`**Temperature:** (omitted — rejected by adaptive-thinking models)`);
       } else if (thinkingCapability === 'full') {
         // Manual thinking on older Claude models (Sonnet 4.5 and earlier, Haiku 4.5, etc.)
         const budgetTokens = options.thinking.budgetTokens
@@ -217,7 +236,9 @@ export class AIService {
       log(`**Tools:** ${options.tools.map(t => t.name).join(', ')}`);
     }
     
-    log(`**Temperature:** ${body.temperature}`);
+    if (body.temperature !== undefined) {
+      log(`**Temperature:** ${body.temperature}`);
+    }
     log(`**Max tokens:** ${body.max_tokens}`);
     log(`**Messages count:** ${anthropicMessages.length}`);
     
@@ -245,28 +266,26 @@ export class AIService {
         'x-api-key': apiKey, // Use actual key for request
       },
       body: JSON.stringify(body),
+      throw: false, // Don't throw on non-2xx, so we can read the response body
     };
-    
+
     let response;
     try {
       response = await requestUrl(requestParams);
     } catch (e: any) {
-      // Try to extract detailed error info from Obsidian's requestUrl exception
-      const errorDetails = e.response?.text || e.response?.json?.error?.message || e.message || String(e);
+      // Network-level failure (DNS, offline, etc.) - no HTTP response available
+      const errorDetails = e.message || String(e);
       log(`\n**Request failed:** ${errorDetails}`);
-      if (e.response?.json) {
-        log(`**Error response:**\n\`\`\`json\n${JSON.stringify(e.response.json, null, 2)}\n\`\`\``);
-      }
-      const error = new Error(`Anthropic API error: ${errorDetails}`);
+      const error = new Error(`Anthropic request failed (no response): ${errorDetails}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
-    
+
     log(`\n**Response status:** ${response.status}`);
-    
+
     if (response.status !== 200) {
       log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
-      const error = new Error(`Anthropic API error: ${response.status} - ${response.text}`);
+      const error = new Error(`Anthropic API error: ${response.status} - ${extractApiErrorMessage(response.text)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
@@ -512,7 +531,7 @@ export class AIService {
     log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
     
     if (response.status !== 200) {
-      const error = new Error(`OpenAI API error: ${response.status} - ${response.text}`);
+      const error = new Error(`OpenAI API error: ${response.status} - ${extractApiErrorMessage(response.text)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
@@ -948,19 +967,20 @@ export class AIService {
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
+        throw: false, // Don't throw on non-2xx, so we can read the response body
       });
     } catch (e) {
       log(`\n**Request failed:** ${e.message || String(e)}`);
-      const error = new Error(`DeepSeek API error: ${e.message || String(e)}`);
+      const error = new Error(`DeepSeek request failed (no response): ${e.message || String(e)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
-    
+
     log(`\n**Response status:** ${response.status}`);
     
     if (response.status !== 200) {
       log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
-      const error = new Error(`DeepSeek API error: ${response.status} - ${response.text}`);
+      const error = new Error(`DeepSeek API error: ${response.status} - ${extractApiErrorMessage(response.text)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
@@ -1043,10 +1063,11 @@ export class AIService {
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
+        throw: false, // Don't throw on non-2xx, so we can read the response body
       });
     } catch (e) {
       log(`\n**Request failed:** ${e.message || String(e)}`);
-      const error = new Error(`Perplexity API error: ${e.message || String(e)}`);
+      const error = new Error(`Perplexity request failed (no response): ${e.message || String(e)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }
@@ -1055,7 +1076,7 @@ export class AIService {
     
     if (response.status !== 200) {
       log(`**Response body:**\n\`\`\`\n${response.text}\n\`\`\``);
-      const error = new Error(`Perplexity API error: ${response.status} - ${response.text}`);
+      const error = new Error(`Perplexity API error: ${response.status} - ${extractApiErrorMessage(response.text)}`);
       (error as any).debugLog = debugLog;
       throw error;
     }

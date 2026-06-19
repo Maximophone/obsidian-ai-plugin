@@ -1154,8 +1154,14 @@ Step 3: Finally, I select the best solution...`;
         debugBlock = `\n---\n### Debug Log\n${debugLog.join('\n')}\n---\n`;
       }
 
+      // Be robust to non-Error throws (strings, objects without .message)
+      const errorMessage =
+        error instanceof Error ? error.message
+        : typeof error === 'string' ? error
+        : (error as any)?.message || JSON.stringify(error);
+
       // Use blockWithoutReply (not original) to prevent infinite loop - reply tag is already removed
-      const errorBlock = `${blockWithoutReply}${BEACON.ERROR}\n\`\`\`\n${error.message}\n\`\`\`${debugBlock}\n`;
+      const errorBlock = `${blockWithoutReply}${BEACON.ERROR}\n\`\`\`\n${errorMessage}\n\`\`\`${debugBlock}\n`;
       return `<ai!${optionTxt}>${errorBlock}</ai!>`;
     }
   }
