@@ -58,7 +58,7 @@ export interface AIResponse {
 }
 
 // Thinking configuration for AI requests
-export type ThinkingLevel = 'low' | 'medium' | 'high' | 'max';
+export type ThinkingLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface ThinkingConfig {
   enabled: boolean;
@@ -66,7 +66,7 @@ export interface ThinkingConfig {
   budgetTokens?: number;   // Explicit token budget (legacy / advanced override)
 }
 
-export const THINKING_LEVELS: ThinkingLevel[] = ['low', 'medium', 'high', 'max'];
+export const THINKING_LEVELS: ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // Level → budget mapping used when a level is given but the provider expects a raw budget
 // (older Claude models, Gemini). Values chosen to roughly match Anthropic's adaptive tiers.
@@ -74,6 +74,7 @@ export const THINKING_LEVEL_BUDGETS: Record<ThinkingLevel, number> = {
   low: 4000,
   medium: 10000,
   high: 24000,
+  xhigh: 48000,
   max: 64000,
 };
 
@@ -85,16 +86,29 @@ export function budgetToLevel(budget: number): ThinkingLevel {
   if (budget <= 6000) return 'low';
   if (budget <= 16000) return 'medium';
   if (budget <= 40000) return 'high';
+  if (budget <= 56000) return 'xhigh';
   return 'max';
 }
 
 // Anthropic models that require (or default to) adaptive thinking.
-// On these models `{ type: "enabled", budget_tokens }` is either rejected (Opus 4.7)
-// or deprecated (Opus 4.6, Sonnet 4.6).
+// On these models `{ type: "enabled", budget_tokens }` is either rejected
+// (Fable 5, Opus 4.8, Opus 4.7, Sonnet 5) or deprecated (Opus 4.6, Sonnet 4.6).
 export const ANTHROPIC_ADAPTIVE_MODELS: Set<string> = new Set([
+  'claude-fable-5',
+  'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-opus-4-6',
+  'claude-sonnet-5',
   'claude-sonnet-4-6',
+]);
+
+// Anthropic models that reject sampling parameters (temperature/top_p/top_k
+// return a 400). Never send temperature to these.
+export const ANTHROPIC_NO_SAMPLING_MODELS: Set<string> = new Set([
+  'claude-fable-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-sonnet-5',
 ]);
 
 // Models that support extended thinking
@@ -110,6 +124,9 @@ export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'>
   'claude-opus-4-5-20251101': 'full',
   'claude-opus-4-6': 'full',
   'claude-opus-4-7': 'full',
+  'claude-opus-4-8': 'full',
+  'claude-sonnet-5': 'full',
+  'claude-fable-5': 'full',
   'claude-haiku-4-5-20251001': 'full',
   
   // OpenAI o-series - hidden reasoning (only token count)
@@ -225,6 +242,9 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'opus4.5', provider: 'anthropic', modelId: 'claude-opus-4-5-20251101', displayName: 'Claude Opus 4.5' },
   { alias: 'opus4.6', provider: 'anthropic', modelId: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
   { alias: 'opus4.7', provider: 'anthropic', modelId: 'claude-opus-4-7', displayName: 'Claude Opus 4.7' },
+  { alias: 'opus4.8', provider: 'anthropic', modelId: 'claude-opus-4-8', displayName: 'Claude Opus 4.8' },
+  { alias: 'sonnet5', provider: 'anthropic', modelId: 'claude-sonnet-5', displayName: 'Claude Sonnet 5' },
+  { alias: 'fable5', provider: 'anthropic', modelId: 'claude-fable-5', displayName: 'Claude Fable 5' },
   { alias: 'haiku4.5', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5' },
   
   // ===== OpenAI =====
@@ -238,6 +258,10 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'gpt5-nano', provider: 'openai', modelId: 'gpt-5-nano', displayName: 'GPT-5 Nano' },
   { alias: 'gpt5.1', provider: 'openai', modelId: 'gpt-5.1', displayName: 'GPT-5.1' },
   { alias: 'gpt5.2', provider: 'openai', modelId: 'gpt-5.2', displayName: 'GPT-5.2' },
+  { alias: 'gpt5.6', provider: 'openai', modelId: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' },
+  { alias: 'sol', provider: 'openai', modelId: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' },
+  { alias: 'terra', provider: 'openai', modelId: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra' },
+  { alias: 'luna', provider: 'openai', modelId: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' },
   { alias: 'o1-preview', provider: 'openai', modelId: 'o1-preview', displayName: 'o1 Preview' },
   { alias: 'o1-mini', provider: 'openai', modelId: 'o1-mini', displayName: 'o1 Mini' },
   { alias: 'o1', provider: 'openai', modelId: 'o1-2024-12-17', displayName: 'o1' },
@@ -256,19 +280,28 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'gemini2.5flash', provider: 'google', modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
   { alias: 'gemini2.5flashlite', provider: 'google', modelId: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite' },
   { alias: 'gemini3.0pro', provider: 'google', modelId: 'gemini-3-pro-preview', displayName: 'Gemini 3.0 Pro' },
+  { alias: 'gemini3.1pro', provider: 'google', modelId: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro' },
+  { alias: 'gemini3.1flashlite', provider: 'google', modelId: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite' },
+  { alias: 'gemini3.5flash', provider: 'google', modelId: 'gemini-3.5-flash', displayName: 'Gemini 3.5 Flash' },
   // Convenience aliases
   { alias: 'gemini', provider: 'google', modelId: 'gemini-2.5-flash', displayName: 'Gemini (2.5 Flash)' },
   { alias: 'gemini-flash', provider: 'google', modelId: 'gemini-2.5-flash', displayName: 'Gemini Flash' },
   { alias: 'gemini-pro', provider: 'google', modelId: 'gemini-2.5-pro', displayName: 'Gemini Pro' },
   
   // ===== DeepSeek =====
-  { alias: 'deepseek', provider: 'deepseek', modelId: 'deepseek-chat', displayName: 'DeepSeek Chat' },
-  { alias: 'deepseek-chat', provider: 'deepseek', modelId: 'deepseek-chat', displayName: 'DeepSeek Chat' },
-  { alias: 'deepseek-reasoner', provider: 'deepseek', modelId: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner' },
+  // Note: 'deepseek-chat' / 'deepseek-reasoner' IDs are deprecated by DeepSeek on
+  // 2026-07-24; they map to the non-thinking / thinking modes of deepseek-v4-flash.
+  { alias: 'deepseek', provider: 'deepseek', modelId: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
+  { alias: 'deepseek-v4', provider: 'deepseek', modelId: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' },
+  { alias: 'deepseek-v4-pro', provider: 'deepseek', modelId: 'deepseek-v4-pro', displayName: 'DeepSeek V4 Pro' },
+  { alias: 'deepseek-chat', provider: 'deepseek', modelId: 'deepseek-chat', displayName: 'DeepSeek Chat (legacy)' },
+  { alias: 'deepseek-reasoner', provider: 'deepseek', modelId: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner (legacy)' },
   
   // ===== Perplexity =====
   { alias: 'sonar', provider: 'perplexity', modelId: 'sonar', displayName: 'Perplexity Sonar' },
   { alias: 'sonar-pro', provider: 'perplexity', modelId: 'sonar-pro', displayName: 'Perplexity Sonar Pro' },
+  { alias: 'sonar-reasoning-pro', provider: 'perplexity', modelId: 'sonar-reasoning-pro', displayName: 'Perplexity Sonar Reasoning Pro' },
+  { alias: 'sonar-deep-research', provider: 'perplexity', modelId: 'sonar-deep-research', displayName: 'Perplexity Sonar Deep Research' },
 ];
 
 export const DEFAULT_SETTINGS: ObsidianAISettings = {
@@ -278,7 +311,7 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   deepseekApiKey: '',
   perplexityApiKey: '',
   
-  defaultModel: 'opus4.7',  // Latest Claude Opus model
+  defaultModel: 'opus4.8',  // Latest Claude Opus model
   defaultTemperature: 0.7,
   defaultMaxTokens: 4096,
 

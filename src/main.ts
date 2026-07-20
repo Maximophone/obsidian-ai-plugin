@@ -513,7 +513,7 @@ export default class ObsidianAIPlugin extends Plugin {
     }
     // Fall back to default model
     const defaultConfig = resolveModel(this.settings.defaultModel, this.settings);
-    return defaultConfig?.modelId || 'claude-sonnet-4-20250514';
+    return defaultConfig?.modelId || 'claude-sonnet-5';
   }
 }
 

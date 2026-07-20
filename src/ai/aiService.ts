@@ -3,7 +3,7 @@
  */
 
 import { requestUrl, RequestUrlParam } from 'obsidian';
-import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, ThinkingLevel, THINKING_CAPABLE_MODELS, ANTHROPIC_ADAPTIVE_MODELS, levelToBudget, budgetToLevel, AIToolCall } from '../types';
+import { AIMessage, AIResponse, AIProvider, resolveModel, ModelConfig, MessageContent, ThinkingConfig, ThinkingLevel, THINKING_CAPABLE_MODELS, ANTHROPIC_ADAPTIVE_MODELS, ANTHROPIC_NO_SAMPLING_MODELS, levelToBudget, budgetToLevel, AIToolCall } from '../types';
 import { ToolDefinition, toolsToAnthropicFormat, toolsToOpenAIFormat, toolsToGoogleFormat } from '../tools';
 import type ObsidianAIPlugin from '../main';
 
@@ -165,10 +165,10 @@ export class AIService {
       log(`**Thinking mode:** ${useAdaptive ? 'adaptive' : 'manual (enabled)'}`);
 
       if (useAdaptive) {
-        // Adaptive thinking (Opus 4.7, Opus 4.6, Sonnet 4.6).
-        // Opus 4.7 rejects type:"enabled" entirely; on 4.6 models it's deprecated.
-        // Effort is passed via output_config. If the user supplied a raw budget
-        // (legacy), map it back to the closest effort level.
+        // Adaptive thinking (Fable 5, Opus 4.8/4.7/4.6, Sonnet 5, Sonnet 4.6).
+        // Opus 4.7+ / Sonnet 5 / Fable 5 reject type:"enabled" entirely; on 4.6
+        // models it's deprecated. Effort is passed via output_config. If the user
+        // supplied a raw budget (legacy), map it back to the closest effort level.
         const effort: ThinkingLevel | undefined = options.thinking.level
           ?? (options.thinking.budgetTokens ? budgetToLevel(options.thinking.budgetTokens) : undefined);
 
@@ -179,8 +179,11 @@ export class AIService {
         } else {
           log(`**Effort:** (unset, API default 'high')`);
         }
-        // Temperature must be 1 whenever thinking is active on Claude.
-        body.temperature = 1;
+        // Sampling params are removed on Opus 4.7+/Sonnet 5/Fable 5 (400 if sent);
+        // on 4.6 models temperature must be 1 whenever thinking is active.
+        if (!ANTHROPIC_NO_SAMPLING_MODELS.has(model)) {
+          body.temperature = 1;
+        }
       } else if (thinkingCapability === 'full') {
         // Manual thinking on older Claude models (Sonnet 4.5 and earlier, Haiku 4.5, etc.)
         const budgetTokens = options.thinking.budgetTokens
@@ -200,9 +203,11 @@ export class AIService {
         body.temperature = 1;
       } else {
         log(`**Warning:** Model may not support extended thinking`);
-        body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
+        if (!ANTHROPIC_NO_SAMPLING_MODELS.has(model)) {
+          body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
+        }
       }
-    } else {
+    } else if (!ANTHROPIC_NO_SAMPLING_MODELS.has(model)) {
       body.temperature = options.temperature ?? this.plugin.settings.defaultTemperature;
     }
     
@@ -217,7 +222,7 @@ export class AIService {
       log(`**Tools:** ${options.tools.map(t => t.name).join(', ')}`);
     }
     
-    log(`**Temperature:** ${body.temperature}`);
+    log(`**Temperature:** ${body.temperature ?? '(omitted — model rejects sampling params)'}`);
     log(`**Max tokens:** ${body.max_tokens}`);
     log(`**Messages count:** ${anthropicMessages.length}`);
     
@@ -448,11 +453,11 @@ export class AIService {
       // o-series and GPT-5.x models use max_completion_tokens instead of max_tokens
       body.max_completion_tokens = options.maxTokens || this.plugin.settings.defaultMaxTokens;
       
-      // Add reasoning effort if thinking is enabled (o-series only).
-      // OpenAI accepts 'low' | 'medium' | 'high'. Map our 'max' → 'high'.
-      if (isReasoningModel && options.thinking?.enabled) {
+      // Add reasoning effort if thinking is enabled (o-series and GPT-5.x).
+      // OpenAI accepts 'low' | 'medium' | 'high'. Map 'xhigh'/'max' → 'high'.
+      if (options.thinking?.enabled) {
         const level = options.thinking.level;
-        const effort = level === 'max' ? 'high' : (level ?? 'high');
+        const effort = (level === 'max' || level === 'xhigh') ? 'high' : (level ?? 'high');
         body.reasoning_effort = effort;
         log(`**Reasoning effort:** ${effort}`);
       }
