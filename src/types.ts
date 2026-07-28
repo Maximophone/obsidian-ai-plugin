@@ -92,9 +92,10 @@ export function budgetToLevel(budget: number): ThinkingLevel {
 
 // Anthropic models that require (or default to) adaptive thinking.
 // On these models `{ type: "enabled", budget_tokens }` is either rejected
-// (Fable 5, Opus 4.8, Opus 4.7, Sonnet 5) or deprecated (Opus 4.6, Sonnet 4.6).
+// (Fable 5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5) or deprecated (Opus 4.6, Sonnet 4.6).
 export const ANTHROPIC_ADAPTIVE_MODELS: Set<string> = new Set([
   'claude-fable-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-opus-4-6',
@@ -106,6 +107,7 @@ export const ANTHROPIC_ADAPTIVE_MODELS: Set<string> = new Set([
 // return a 400). Never send temperature to these.
 export const ANTHROPIC_NO_SAMPLING_MODELS: Set<string> = new Set([
   'claude-fable-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-5',
@@ -125,6 +127,7 @@ export const THINKING_CAPABLE_MODELS: Record<string, 'full' | 'hidden' | 'none'>
   'claude-opus-4-6': 'full',
   'claude-opus-4-7': 'full',
   'claude-opus-4-8': 'full',
+  'claude-opus-5': 'full',
   'claude-sonnet-5': 'full',
   'claude-fable-5': 'full',
   'claude-haiku-4-5-20251001': 'full',
@@ -243,6 +246,7 @@ export const DEFAULT_MODELS: ModelConfig[] = [
   { alias: 'opus4.6', provider: 'anthropic', modelId: 'claude-opus-4-6', displayName: 'Claude Opus 4.6' },
   { alias: 'opus4.7', provider: 'anthropic', modelId: 'claude-opus-4-7', displayName: 'Claude Opus 4.7' },
   { alias: 'opus4.8', provider: 'anthropic', modelId: 'claude-opus-4-8', displayName: 'Claude Opus 4.8' },
+  { alias: 'opus5', provider: 'anthropic', modelId: 'claude-opus-5', displayName: 'Claude Opus 5' },
   { alias: 'sonnet5', provider: 'anthropic', modelId: 'claude-sonnet-5', displayName: 'Claude Sonnet 5' },
   { alias: 'fable5', provider: 'anthropic', modelId: 'claude-fable-5', displayName: 'Claude Fable 5' },
   { alias: 'haiku4.5', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5' },
@@ -311,7 +315,7 @@ export const DEFAULT_SETTINGS: ObsidianAISettings = {
   deepseekApiKey: '',
   perplexityApiKey: '',
   
-  defaultModel: 'opus4.8',  // Latest Claude Opus model
+  defaultModel: 'opus5',  // Latest Claude Opus model
   defaultTemperature: 0.7,
   defaultMaxTokens: 4096,
 

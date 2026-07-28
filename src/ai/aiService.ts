@@ -165,9 +165,9 @@ export class AIService {
       log(`**Thinking mode:** ${useAdaptive ? 'adaptive' : 'manual (enabled)'}`);
 
       if (useAdaptive) {
-        // Adaptive thinking (Fable 5, Opus 4.8/4.7/4.6, Sonnet 5, Sonnet 4.6).
-        // Opus 4.7+ / Sonnet 5 / Fable 5 reject type:"enabled" entirely; on 4.6
-        // models it's deprecated. Effort is passed via output_config. If the user
+        // Adaptive thinking (Fable 5, Opus 5, Opus 4.8/4.7/4.6, Sonnet 5, Sonnet 4.6).
+        // Opus 4.7+ / Opus 5 / Sonnet 5 / Fable 5 reject type:"enabled" entirely; on
+        // 4.6 models it's deprecated. Effort is passed via output_config. If the user
         // supplied a raw budget (legacy), map it back to the closest effort level.
         const effort: ThinkingLevel | undefined = options.thinking.level
           ?? (options.thinking.budgetTokens ? budgetToLevel(options.thinking.budgetTokens) : undefined);
@@ -179,8 +179,8 @@ export class AIService {
         } else {
           log(`**Effort:** (unset, API default 'high')`);
         }
-        // Sampling params are removed on Opus 4.7+/Sonnet 5/Fable 5 (400 if sent);
-        // on 4.6 models temperature must be 1 whenever thinking is active.
+        // Sampling params are removed on Opus 4.7+/Opus 5/Sonnet 5/Fable 5 (400 if
+        // sent); on 4.6 models temperature must be 1 whenever thinking is active.
         if (!ANTHROPIC_NO_SAMPLING_MODELS.has(model)) {
           body.temperature = 1;
         }

@@ -15,6 +15,7 @@ const MODEL_PRICES: Record<string, [number, number]> = {
   'opus4.6': [5, 25],
   'opus4.7': [5, 25],
   'opus4.8': [5, 25],
+  'opus5': [5, 25],
   'fable5': [10, 50],
   'sonnet4': [3, 15],
   'sonnet4.5': [3, 15],
